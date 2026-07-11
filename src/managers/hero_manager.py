@@ -1,4 +1,3 @@
-from importlib.metadata import files
 from pathlib import Path
 
 from src.models.hero import Hero
@@ -26,53 +25,48 @@ class HeroManager:
             hero_class=hero_class
         )
 
-        hero.save(cls.hero_folder())
+        cls.save_hero(hero)
 
         return hero
 
     @classmethod
     def save_hero(cls, hero):
 
-        hero.save(cls.hero_folder())
+        folder = cls.hero_folder()
+
+        if folder is None:
+            return
+
+        hero.save(folder)
 
     @classmethod
     def load_heroes(cls):
 
         folder = cls.hero_folder()
 
-        print("--------------------------------")
-        print("Current Campaign:", CurrentCampaign.name())
-        print("Hero Folder:", folder)
+        if folder is None:
+            return []
 
         heroes = []
 
-        if folder is None:
-             print("No campaign loaded")
-             return heroes
+        for file in sorted(folder.glob("*.json")):
+            try:
+                hero = Hero.load(file)
+                heroes.append(hero)
+            except Exception as e:
+                print(f"Failed to load {file}: {e}")
 
-        files = list(folder.glob("*.json"))
-
-    print("JSON Files:", files)
-
-    for file in files:
-
-        print("Loading:", file)
-
-        hero = Hero.load(file)
-
-        print("Loaded:", hero.name)
-
-        heroes.append(hero)
-
-    print("Heroes Loaded:", len(heroes))
-    print("--------------------------------")
-
-    return heroes
+        return heroes
 
     @classmethod
     def delete_hero(cls, hero):
 
-        file = cls.hero_folder() / f"{hero.name}.json"
+        folder = cls.hero_folder()
+
+        if folder is None:
+            return
+
+        file = folder / f"{hero.name}.json"
 
         if file.exists():
             file.unlink()
