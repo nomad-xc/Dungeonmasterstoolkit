@@ -1,13 +1,32 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
-    QVBoxLayout,
     QHBoxLayout,
-    QPushButton,
+    QVBoxLayout,
+    QListWidget,
     QStackedWidget,
+    QLabel,
 )
 
 from src.pages.campaigns import CampaignPage
+from src.pages.heroes import HeroesPage
+
+
+class PlaceholderPage(QWidget):
+    def __init__(self, title):
+        super().__init__()
+
+        layout = QVBoxLayout(self)
+
+        label = QLabel(title)
+        label.setStyleSheet("""
+            font-size: 30px;
+            font-weight: bold;
+        """)
+
+        layout.addWidget(label)
+        layout.addStretch()
 
 
 class MainWindow(QMainWindow):
@@ -21,38 +40,55 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
 
-        root = QVBoxLayout(central)
+        root = QHBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
         #
-        # Top Navigation
+        # Sidebar
         #
-        nav = QWidget()
-        nav_layout = QHBoxLayout(nav)
+        self.menu = QListWidget()
+        self.menu.setFixedWidth(220)
 
-        pages = [
-            "Dashboard",
+        self.menu.addItems([
+            "Campaigns",
             "Heroes",
-            "Combat",
-            "Initiative",
-            "Maps",
-            "Monster DB",
-            "Sounds",
+            "Library",
+            "Scenes",
+            "Session",
+            "Player Display",
             "Settings",
-        ]
+        ])
 
-        for page in pages:
-            button = QPushButton(page)
-            nav_layout.addWidget(button)
+        # Disable campaign-specific pages
+        for index in [1, 3, 4, 5]:
+            item = self.menu.item(index)
+            item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
 
-        root.addWidget(nav)
+        root.addWidget(self.menu)
 
         #
-        # Main Content
+        # Pages
         #
         self.stack = QStackedWidget()
 
-        self.stack.addWidget(CampaignPage())
+        self.stack.addWidget(CampaignPage())                     # 0
+        self.stack.addWidget(HeroesPage())                       # 1
+        self.stack.addWidget(PlaceholderPage("Library"))         # 2
+        self.stack.addWidget(PlaceholderPage("Scenes"))          # 3
+        self.stack.addWidget(PlaceholderPage("Session"))         # 4
+        self.stack.addWidget(PlaceholderPage("Player Display"))  # 5
+        self.stack.addWidget(PlaceholderPage("Settings"))        # 6
 
         root.addWidget(self.stack)
+
+        self.menu.currentRowChanged.connect(self.stack.setCurrentIndex)
+
+        self.menu.setCurrentRow(0)
+
+    def unlock_campaign(self):
+        """Enable campaign-specific pages."""
+
+        for index in [1, 3, 4, 5]:
+            item = self.menu.item(index)
+            item.setFlags(item.flags() | Qt.ItemIsEnabled)
