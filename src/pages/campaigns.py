@@ -84,4 +84,9 @@ class CampaignPage(QWidget):
 
         CurrentCampaign.load(name)
 
+        window = self.window()
+
+        if hasattr(window, "unlock_campaign"):
+            window.unlock_campaign()
+
         print("Loaded:", CurrentCampaign.name())
