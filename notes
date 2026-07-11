@@ -1,0 +1,4 @@
+git status
+git add .
+git commit -m "Alpha 0.5 - Hero editor"
+git push

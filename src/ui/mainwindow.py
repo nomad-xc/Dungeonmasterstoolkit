@@ -61,13 +61,16 @@ class MainWindow(QMainWindow):
         self.campaign_page = CampaignPage()
         self.campaign_page.campaignOpened.connect(self.campaign_loaded)
 
-        self.stack.addWidget(self.campaign_page)               # 0
-        self.stack.addWidget(HeroesPage())                     # 1
-        self.stack.addWidget(PlaceholderPage("Library"))       # 2
-        self.stack.addWidget(PlaceholderPage("Scenes"))        # 3
-        self.stack.addWidget(PlaceholderPage("Session"))       # 4
-        self.stack.addWidget(PlaceholderPage("Player Display"))# 5
-        self.stack.addWidget(PlaceholderPage("Settings"))      # 6
+        # KEEP REFERENCES TO PAGES
+        self.heroes_page = HeroesPage()
+
+        self.stack.addWidget(self.campaign_page)                    # 0
+        self.stack.addWidget(self.heroes_page)                      # 1
+        self.stack.addWidget(PlaceholderPage("Library"))            # 2
+        self.stack.addWidget(PlaceholderPage("Scenes"))             # 3
+        self.stack.addWidget(PlaceholderPage("Session"))            # 4
+        self.stack.addWidget(PlaceholderPage("Player Display"))     # 5
+        self.stack.addWidget(PlaceholderPage("Settings"))           # 6
 
         root.addWidget(self.stack)
 
@@ -106,5 +109,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(
             f"Dungeon Master's Toolkit - {campaign_name}"
         )
+
+        # THIS IS THE IMPORTANT PART
+        self.heroes_page.refresh()
 
         self.sidebar.setCurrentRow(3)
