@@ -17,7 +17,7 @@ class CampaignManager:
         folder.mkdir(parents=True, exist_ok=True)
 
         for subfolder in [
-            "Heroes",
+            "heroes",
             "Maps",
             "Scenes",
             "Saves",

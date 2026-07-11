@@ -1,3 +1,4 @@
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -13,6 +14,8 @@ from src.database.current_campaign import CurrentCampaign
 
 
 class CampaignPage(QWidget):
+
+    campaignOpened = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -54,8 +57,7 @@ class CampaignPage(QWidget):
         for campaign in campaigns:
 
             item = QListWidgetItem(
-                f"{campaign.name}\n"
-                f"Created: {campaign.created}"
+                f"{campaign.name}\nCreated: {campaign.created}"
             )
 
             self.campaign_list.addItem(item)
@@ -73,6 +75,7 @@ class CampaignPage(QWidget):
             CampaignManager.create_campaign(name)
 
             self.refresh_campaigns()
+
     def open_campaign(self):
 
         item = self.campaign_list.currentItem()
@@ -84,9 +87,4 @@ class CampaignPage(QWidget):
 
         CurrentCampaign.load(name)
 
-        window = self.window()
-
-        if hasattr(window, "unlock_campaign"):
-            window.unlock_campaign()
-
-        print("Loaded:", CurrentCampaign.name())
+        self.campaignOpened.emit(name)

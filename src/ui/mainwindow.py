@@ -38,10 +38,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Dungeon Master's Toolkit")
         self.resize(1600, 900)
 
-        #
-        # Central Widget
-        #
-
         central = QWidget()
         self.setCentralWidget(central)
 
@@ -54,7 +50,6 @@ class MainWindow(QMainWindow):
         #
 
         self.sidebar = Sidebar()
-
         root.addWidget(self.sidebar)
 
         #
@@ -63,13 +58,16 @@ class MainWindow(QMainWindow):
 
         self.stack = QStackedWidget()
 
-        self.stack.addWidget(CampaignPage())                    # 0
-        self.stack.addWidget(HeroesPage())                      # 1
-        self.stack.addWidget(PlaceholderPage("Library"))        # 2
-        self.stack.addWidget(PlaceholderPage("Scenes"))         # 3
-        self.stack.addWidget(PlaceholderPage("Session"))        # 4
-        self.stack.addWidget(PlaceholderPage("Player Display")) # 5
-        self.stack.addWidget(PlaceholderPage("Settings"))       # 6
+        self.campaign_page = CampaignPage()
+        self.campaign_page.campaignOpened.connect(self.campaign_loaded)
+
+        self.stack.addWidget(self.campaign_page)               # 0
+        self.stack.addWidget(HeroesPage())                     # 1
+        self.stack.addWidget(PlaceholderPage("Library"))       # 2
+        self.stack.addWidget(PlaceholderPage("Scenes"))        # 3
+        self.stack.addWidget(PlaceholderPage("Session"))       # 4
+        self.stack.addWidget(PlaceholderPage("Player Display"))# 5
+        self.stack.addWidget(PlaceholderPage("Settings"))      # 6
 
         root.addWidget(self.stack)
 
@@ -79,20 +77,12 @@ class MainWindow(QMainWindow):
 
     def change_page(self, row):
 
-        #
-        # Home Menu
-        #
-
         if self.sidebar.count() == 2:
 
             mapping = {
-                0: 0,   # Campaigns
-                1: 2,   # Library
+                0: 0,
+                1: 2,
             }
-
-        #
-        # Campaign Menu
-        #
 
         else:
 
@@ -116,9 +106,5 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(
             f"Dungeon Master's Toolkit - {campaign_name}"
         )
-
-        #
-        # Automatically open Heroes
-        #
 
         self.sidebar.setCurrentRow(3)
