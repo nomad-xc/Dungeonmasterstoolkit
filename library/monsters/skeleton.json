@@ -1,0 +1,12 @@
+{
+    "name": "skeleton",
+    "hp": 10,
+    "max_hp": 10,
+    "ac": 10,
+    "speed": 30,
+    "xp": 0,
+    "portrait": "",
+    "description": "",
+    "abilities": "",
+    "notes": ""
+}
