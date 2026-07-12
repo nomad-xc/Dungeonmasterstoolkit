@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QInputDialog,
+    QMessageBox,
 )
 
 from src.widgets.primary_button import PrimaryButton
@@ -42,6 +43,7 @@ class CampaignPage(QWidget):
         layout.addWidget(self.open_button)
 
         self.delete_button = PrimaryButton("Delete Campaign")
+        self.delete_button.clicked.connect(self.delete_campaign)
         layout.addWidget(self.delete_button)
 
         layout.addStretch()
@@ -88,3 +90,28 @@ class CampaignPage(QWidget):
         CurrentCampaign.load(name)
 
         self.campaignOpened.emit(name)
+
+    def delete_campaign(self):
+
+        item = self.campaign_list.currentItem()
+
+        if item is None:
+            return
+
+        name = item.text().split("\n")[0]
+
+        confirm = QMessageBox.question(
+            self,
+            "Delete Campaign",
+            f"Delete campaign '{name}' and all of its data? This cannot be undone."
+        )
+
+        if confirm != QMessageBox.Yes:
+            return
+
+        CampaignManager.delete_campaign(name)
+
+        if CurrentCampaign.loaded() and CurrentCampaign.name() == name:
+            CurrentCampaign.unload()
+
+        self.refresh_campaigns()

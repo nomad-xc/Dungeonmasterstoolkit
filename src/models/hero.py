@@ -44,6 +44,8 @@ class Hero:
 
     conditions: list = None
 
+    is_dm: bool = False
+
     def __post_init__(self):
 
         if self.conditions is None:

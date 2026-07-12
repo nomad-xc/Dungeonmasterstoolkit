@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QFrame,
+    QCheckBox,
 )
 
 from src.models.hero import Hero
@@ -79,6 +80,10 @@ class HeroPanel(QWidget):
 
         self.hero_class = QLineEdit()
         form.addRow("Class", self.hero_class)
+
+        self.is_dm_checkbox = QCheckBox("DM this session (sits out of Gameplay)")
+        self.is_dm_checkbox.toggled.connect(self.toggle_dm)
+        form.addRow("", self.is_dm_checkbox)
 
         self.speed = QSpinBox()
         self.speed.setRange(0, 200)
@@ -236,6 +241,10 @@ class HeroPanel(QWidget):
         self.race.setText(hero.race)
         self.hero_class.setText(hero.hero_class)
 
+        self.is_dm_checkbox.blockSignals(True)
+        self.is_dm_checkbox.setChecked(hero.is_dm)
+        self.is_dm_checkbox.blockSignals(False)
+
         self.speed.setValue(hero.speed)
         self.level.setValue(hero.level)
         self.xp.setValue(hero.xp)
@@ -260,6 +269,20 @@ class HeroPanel(QWidget):
 
         self.update_portrait_preview()
 
+    def toggle_dm(self, checked):
+
+        if self.hero is None:
+            return
+
+        self.hero.is_dm = checked
+
+        HeroManager.save_hero(self.hero)
+
+        if checked:
+            self._clear_other_dm_flags()
+
+        self.heroSaved.emit()
+
     def save(self):
 
         if self.hero is None:
@@ -268,6 +291,8 @@ class HeroPanel(QWidget):
         self.hero.name = self.name.text()
         self.hero.race = self.race.text()
         self.hero.hero_class = self.hero_class.text()
+
+        self.hero.is_dm = self.is_dm_checkbox.isChecked()
 
         self.hero.speed = self.speed.value()
         self.hero.level = self.level.value()
@@ -295,4 +320,15 @@ class HeroPanel(QWidget):
 
         HeroManager.save_hero(self.hero)
 
+        if self.hero.is_dm:
+            self._clear_other_dm_flags()
+
         self.heroSaved.emit()
+
+    def _clear_other_dm_flags(self):
+
+        for other in HeroManager.load_heroes():
+
+            if other.name != self.hero.name and other.is_dm:
+                other.is_dm = False
+                HeroManager.save_hero(other)

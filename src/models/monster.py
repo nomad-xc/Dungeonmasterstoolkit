@@ -20,6 +20,7 @@ class Monster:
 
     description: str = ""
     abilities: str = ""
+    behavior: str = ""
     notes: str = ""
 
     def save(self, folder):

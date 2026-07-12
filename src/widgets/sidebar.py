@@ -15,6 +15,7 @@ class Sidebar(QListWidget):
         "Heroes",
         "Scenes",
         "Session",
+        "Gameplay",
         "Player Display",
         "Settings",
     ]

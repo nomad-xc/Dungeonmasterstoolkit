@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QFrame,
     QInputDialog,
+    QMessageBox,
 )
 
 from src.managers.monster_manager import MonsterManager
@@ -78,6 +79,10 @@ class MonsterCard(QFrame):
 
         layout.addStretch()
 
+        delete_button = QPushButton("Delete")
+        delete_button.clicked.connect(self.delete_monster)
+        layout.addWidget(delete_button)
+
     def mouseDoubleClickEvent(self, event):
 
         editor = MonsterEditor(self.monster)
@@ -86,6 +91,18 @@ class MonsterCard(QFrame):
 
             MonsterManager.save_monster(self.monster)
 
+            self.refresh_callback()
+
+    def delete_monster(self):
+
+        confirm = QMessageBox.question(
+            self,
+            "Delete Monster",
+            f"Delete '{self.monster.name}' from the library?"
+        )
+
+        if confirm == QMessageBox.Yes:
+            MonsterManager.delete_monster(self.monster)
             self.refresh_callback()
 
 

@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import shutil
 from datetime import datetime
 
 from src.models.campaign_info import CampaignInfo
@@ -63,3 +64,11 @@ class CampaignManager:
         campaigns.sort(key=lambda c: c.name)
 
         return campaigns
+
+    @classmethod
+    def delete_campaign(cls, name):
+
+        folder = cls.CAMPAIGN_FOLDER / name
+
+        if folder.exists():
+            shutil.rmtree(folder)

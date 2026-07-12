@@ -102,6 +102,10 @@ class MonsterEditor(QDialog):
         self.abilities.setPlaceholderText("Abilities...")
         layout.addWidget(self.abilities)
 
+        self.behavior = QTextEdit(monster.behavior)
+        self.behavior.setPlaceholderText("Behavior...")
+        layout.addWidget(self.behavior)
+
         self.notes = QTextEdit(monster.notes)
         self.notes.setPlaceholderText("Notes...")
         layout.addWidget(self.notes)
@@ -156,6 +160,7 @@ class MonsterEditor(QDialog):
 
         self.monster.description = self.description.toPlainText()
         self.monster.abilities = self.abilities.toPlainText()
+        self.monster.behavior = self.behavior.toPlainText()
         self.monster.notes = self.notes.toPlainText()
 
         self.accept()

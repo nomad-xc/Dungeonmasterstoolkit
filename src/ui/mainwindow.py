@@ -12,6 +12,9 @@ from src.widgets.sidebar import Sidebar
 from src.pages.campaigns import CampaignPage
 from src.pages.heroes import HeroesPage
 from src.pages.library import LibraryPage
+from src.pages.session import SessionPage
+from src.pages.gameplay import GameplayPage
+from src.database.session_state import SessionState
 
 
 class PlaceholderPage(QWidget):
@@ -67,13 +70,17 @@ class MainWindow(QMainWindow):
 
         self.library_page = LibraryPage()
 
+        self.session_page = SessionPage()
+        self.gameplay_page = GameplayPage()
+
         self.stack.addWidget(self.campaign_page)                    # 0
         self.stack.addWidget(self.heroes_page)                      # 1
         self.stack.addWidget(self.library_page)                     # 2
         self.stack.addWidget(PlaceholderPage("Scenes"))             # 3
-        self.stack.addWidget(PlaceholderPage("Session"))            # 4
-        self.stack.addWidget(PlaceholderPage("Player Display"))     # 5
-        self.stack.addWidget(PlaceholderPage("Settings"))           # 6
+        self.stack.addWidget(self.session_page)                     # 4
+        self.stack.addWidget(self.gameplay_page)                    # 5
+        self.stack.addWidget(PlaceholderPage("Player Display"))     # 6
+        self.stack.addWidget(PlaceholderPage("Settings"))           # 7
 
         root.addWidget(self.stack)
 
@@ -100,6 +107,7 @@ class MainWindow(QMainWindow):
                 5: 4,
                 6: 5,
                 7: 6,
+                8: 7,
             }
 
         if row in mapping:
@@ -113,7 +121,11 @@ class MainWindow(QMainWindow):
             f"Dungeon Master's Toolkit - {campaign_name}"
         )
 
+        SessionState.reset()
+
         # THIS IS THE IMPORTANT PART
         self.heroes_page.refresh()
+        self.session_page.refresh()
+        self.gameplay_page.refresh()
 
         self.sidebar.setCurrentRow(3)
