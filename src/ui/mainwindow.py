@@ -11,6 +11,7 @@ from src.widgets.sidebar import Sidebar
 
 from src.pages.campaigns import CampaignPage
 from src.pages.heroes import HeroesPage
+from src.pages.library import LibraryPage
 
 
 class PlaceholderPage(QWidget):
@@ -64,9 +65,11 @@ class MainWindow(QMainWindow):
         # KEEP REFERENCES TO PAGES
         self.heroes_page = HeroesPage()
 
+        self.library_page = LibraryPage()
+
         self.stack.addWidget(self.campaign_page)                    # 0
         self.stack.addWidget(self.heroes_page)                      # 1
-        self.stack.addWidget(PlaceholderPage("Library"))            # 2
+        self.stack.addWidget(self.library_page)                     # 2
         self.stack.addWidget(PlaceholderPage("Scenes"))             # 3
         self.stack.addWidget(PlaceholderPage("Session"))            # 4
         self.stack.addWidget(PlaceholderPage("Player Display"))     # 5

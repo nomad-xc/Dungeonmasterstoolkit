@@ -1,73 +1,15 @@
 from PySide6.QtWidgets import (
     QWidget,
+    QHBoxLayout,
     QVBoxLayout,
     QLabel,
     QPushButton,
-    QGridLayout,
-    QFrame,
+    QListWidget,
     QInputDialog,
 )
 
 from src.managers.hero_manager import HeroManager
-
-
-class HeroCard(QFrame):
-
-    def __init__(self, hero, refresh_callback):
-        super().__init__()
-
-        self.hero = hero
-        self.refresh_callback = refresh_callback
-
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setMinimumHeight(220)
-
-        self.setStyleSheet("""
-        QFrame{
-            background:#2b2b2b;
-            border:2px solid #555;
-            border-radius:12px;
-        }
-
-        QLabel{
-            color:white;
-        }
-
-        QFrame:hover{
-            border:2px solid #d4af37;
-        }
-        """)
-
-        layout = QVBoxLayout(self)
-
-        title = QLabel(hero.name)
-        title.setStyleSheet("""
-            font-size:22px;
-            font-weight:bold;
-        """)
-
-        layout.addWidget(title)
-
-        layout.addWidget(QLabel(hero.hero_class))
-        layout.addWidget(QLabel(f"Level {hero.level}"))
-        layout.addWidget(QLabel(f"HP {hero.hp}/{hero.max_hp}"))
-        layout.addWidget(QLabel(f"MP {hero.mp}/{hero.max_mp}"))
-        layout.addWidget(QLabel(f"AC {hero.ac}"))
-        layout.addWidget(QLabel(f"Gold {hero.gold}"))
-
-        layout.addStretch()
-
-    def mouseDoubleClickEvent(self, event):
-
-        from src.widgets.hero_editor import HeroEditor
-
-        editor = HeroEditor(self.hero)
-
-        if editor.exec():
-
-            HeroManager.save_hero(self.hero)
-
-            self.refresh_callback()
+from src.widgets.hero_panel import HeroPanel
 
 
 class HeroesPage(QWidget):
@@ -75,51 +17,82 @@ class HeroesPage(QWidget):
     def __init__(self):
         super().__init__()
 
-        layout = QVBoxLayout(self)
+        self.heroes = []
+
+        root = QHBoxLayout(self)
+
+        #
+        # Left: hero list
+        #
+
+        left = QVBoxLayout()
 
         title = QLabel("Heroes")
         title.setStyleSheet("""
             font-size:28px;
             font-weight:bold;
         """)
-
-        layout.addWidget(title)
+        left.addWidget(title)
 
         self.add_button = QPushButton("Add Hero")
         self.add_button.clicked.connect(self.add_hero)
+        left.addWidget(self.add_button)
 
-        layout.addWidget(self.add_button)
+        self.hero_list = QListWidget()
+        self.hero_list.currentRowChanged.connect(self.select_hero)
+        left.addWidget(self.hero_list)
 
-        self.grid = QGridLayout()
-        self.grid.setSpacing(20)
+        root.addLayout(left, 1)
 
-        layout.addLayout(self.grid)
+        #
+        # Right: editable panel
+        #
 
-        layout.addStretch()
+        self.panel = HeroPanel()
+        self.panel.heroSaved.connect(self.refresh)
+
+        root.addWidget(self.panel, 2)
 
         self.refresh()
 
-    def refresh(self):
+    def refresh(self, select_name=None):
 
-        while self.grid.count():
+        if select_name is None:
+            current_item = self.hero_list.currentItem()
+            select_name = current_item.text() if current_item else None
 
-            item = self.grid.takeAt(0)
+        self.hero_list.blockSignals(True)
+        self.hero_list.clear()
 
-            if item.widget():
-                item.widget().deleteLater()
+        self.heroes = HeroManager.load_heroes()
 
-        heroes = HeroManager.load_heroes()
+        for hero in self.heroes:
+            self.hero_list.addItem(hero.name)
 
-        for index, hero in enumerate(heroes):
+        self.hero_list.blockSignals(False)
 
-            row = index // 3
-            col = index % 3
+        if self.heroes:
 
-            self.grid.addWidget(
-                 HeroCard(hero, self.refresh),
-                 row,
-                 col
-            )
+            restored_row = 0
+
+            if select_name is not None:
+                for index, hero in enumerate(self.heroes):
+                    if hero.name == select_name:
+                        restored_row = index
+                        break
+
+            self.hero_list.setCurrentRow(restored_row)
+            self.select_hero(restored_row)
+
+        else:
+            self.panel.load_hero(None)
+
+    def select_hero(self, row):
+
+        if 0 <= row < len(self.heroes):
+            self.panel.load_hero(self.heroes[row])
+        else:
+            self.panel.load_hero(None)
 
     def add_hero(self):
 
@@ -146,4 +119,4 @@ class HeroesPage(QWidget):
             hero_class
         )
 
-        self.refresh()
+        self.refresh(select_name=name)
