@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QFrame,
     QInputDialog,
     QMessageBox,
+    QScrollArea,
+    QTabWidget,
 )
 
 from src.managers.monster_manager import MonsterManager
@@ -18,6 +20,21 @@ from src.widgets.monster_editor import MonsterEditor
 
 
 PORTRAIT_SIZE = 80
+
+
+def clear_layout(layout):
+
+    while layout.count():
+
+        item = layout.takeAt(0)
+
+        widget = item.widget()
+        if widget:
+            widget.deleteLater()
+
+        sub_layout = item.layout()
+        if sub_layout:
+            clear_layout(sub_layout)
 
 
 class MonsterCard(QFrame):
@@ -111,29 +128,43 @@ class LibraryPage(QWidget):
     def __init__(self):
         super().__init__()
 
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
 
-        title = QLabel("Library")
-        title.setStyleSheet("""
-            font-size:28px;
-            font-weight:bold;
-        """)
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs)
 
-        layout.addWidget(title)
+        self.monster_container = QVBoxLayout()
+        monster_tab = self._build_kind_tab(
+            self.monster_container, "monster", "Add Monster"
+        )
+        self.tabs.addTab(monster_tab, "Monsters")
 
-        self.add_button = QPushButton("Add Monster")
-        self.add_button.clicked.connect(self.add_monster)
-
-        layout.addWidget(self.add_button)
-
-        self.grid = QGridLayout()
-        self.grid.setSpacing(20)
-
-        layout.addLayout(self.grid)
-
-        layout.addStretch()
+        self.villain_container = QVBoxLayout()
+        villain_tab = self._build_kind_tab(
+            self.villain_container, "villain", "Add Villain"
+        )
+        self.tabs.addTab(villain_tab, "Villains")
 
         self.refresh()
+
+    def _build_kind_tab(self, container, kind, add_label):
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        add_button = QPushButton(add_label)
+        add_button.clicked.connect(lambda checked=False, k=kind: self.add_monster(k))
+        layout.addWidget(add_button)
+
+        sections_widget = QWidget()
+        sections_widget.setLayout(container)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(sections_widget)
+        layout.addWidget(scroll)
+
+        return tab
 
     def showEvent(self, event):
 
@@ -142,37 +173,62 @@ class LibraryPage(QWidget):
 
     def refresh(self):
 
-        while self.grid.count():
+        self._refresh_section(self.monster_container, "monster")
+        self._refresh_section(self.villain_container, "villain")
 
-            item = self.grid.takeAt(0)
+    def _refresh_section(self, container, kind):
 
-            if item.widget():
-                item.widget().deleteLater()
+        clear_layout(container)
 
-        monsters = MonsterManager.load_monsters()
+        monsters = MonsterManager.load_monsters(kind=kind)
 
-        for index, monster in enumerate(monsters):
+        groups = {}
 
-            row = index // 3
-            col = index % 3
+        for monster in monsters:
+            key = monster.creature_type or "Unsorted"
+            groups.setdefault(key, []).append(monster)
 
-            self.grid.addWidget(
-                MonsterCard(monster, self.refresh),
-                row,
-                col
-            )
+        for type_name in sorted(groups.keys()):
 
-    def add_monster(self):
+            type_label = QLabel(type_name)
+            type_label.setStyleSheet("""
+                font-size:18px;
+                font-weight:bold;
+                color:#d4af37;
+            """)
+            container.addWidget(type_label)
+
+            grid = QGridLayout()
+            grid.setSpacing(20)
+
+            for index, monster in enumerate(groups[type_name]):
+
+                row = index // 3
+                col = index % 3
+
+                grid.addWidget(
+                    MonsterCard(monster, self.refresh),
+                    row,
+                    col
+                )
+
+            container.addLayout(grid)
+
+        container.addStretch()
+
+    def add_monster(self, kind):
+
+        label = "Villain" if kind == "villain" else "Monster"
 
         name, ok = QInputDialog.getText(
             self,
-            "New Monster",
-            "Monster Name:"
+            f"New {label}",
+            f"{label} Name:"
         )
 
         if not ok or not name:
             return
 
-        MonsterManager.create_monster(name)
+        MonsterManager.create_monster(name, kind=kind)
 
         self.refresh()

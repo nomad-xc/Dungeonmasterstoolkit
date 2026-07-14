@@ -67,6 +67,13 @@ class MonsterEditor(QDialog):
         self.name = QLineEdit(monster.name)
         form.addRow("Name", self.name)
 
+        kind_label = QLabel(monster.kind.capitalize())
+        form.addRow("Kind", kind_label)
+
+        self.creature_type = QLineEdit(monster.creature_type)
+        self.creature_type.setPlaceholderText("e.g. Undead, Beast, Dragon...")
+        form.addRow("Creature Type", self.creature_type)
+
         self.hp = QSpinBox()
         self.hp.setRange(0, 9999)
         self.hp.setValue(monster.hp)
@@ -149,6 +156,7 @@ class MonsterEditor(QDialog):
     def save(self):
 
         self.monster.name = self.name.text()
+        self.monster.creature_type = self.creature_type.text()
 
         self.monster.hp = self.hp.value()
         self.monster.max_hp = self.max_hp.value()

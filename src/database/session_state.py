@@ -16,7 +16,10 @@ class SessionMonster:
     speed: int
     xp: int
 
+    kind: str = "monster"
+
     behavior: str = ""
+    abilities: str = ""
 
 
 @dataclass
@@ -32,6 +35,11 @@ class MonsterInstance:
     ac: int
     speed: int
     xp: int
+
+    kind: str = "monster"
+
+    behavior: str = ""
+    abilities: str = ""
 
     conditions: list = field(default_factory=list)
 
@@ -76,7 +84,7 @@ class SessionState:
         return list(cls._pool)
 
     @classmethod
-    def add_to_pool(cls, name, hp, max_hp, ac, speed, xp, behavior=""):
+    def add_to_pool(cls, name, hp, max_hp, ac, speed, xp, kind="monster", behavior="", abilities=""):
 
         entry = SessionMonster(
             pool_id=cls._next_pool_id,
@@ -86,7 +94,9 @@ class SessionState:
             ac=ac,
             speed=speed,
             xp=xp,
+            kind=kind,
             behavior=behavior,
+            abilities=abilities,
         )
 
         cls._next_pool_id += 1
@@ -129,6 +139,9 @@ class SessionState:
             ac=template.ac,
             speed=template.speed,
             xp=template.xp,
+            kind=template.kind,
+            behavior=template.behavior,
+            abilities=template.abilities,
         )
 
         cls._next_instance_id += 1
@@ -191,7 +204,7 @@ class SessionState:
     #
 
     @classmethod
-    def roll_initiative(cls, heroes):
+    def _roll_entries(cls, heroes):
 
         entries = []
 
@@ -212,7 +225,12 @@ class SessionState:
 
         entries.sort(key=lambda e: e["roll"], reverse=True)
 
-        cls._initiative = entries
+        return entries
+
+    @classmethod
+    def roll_initiative(cls, heroes):
+
+        cls._initiative = cls._roll_entries(heroes)
         cls._turn_index = 0
         cls._round_number = 1
 
@@ -232,7 +250,7 @@ class SessionState:
         return cls._initiative[cls._turn_index]
 
     @classmethod
-    def next_turn(cls):
+    def next_turn(cls, heroes):
 
         if not cls._initiative:
             return
@@ -240,8 +258,9 @@ class SessionState:
         cls._turn_index += 1
 
         if cls._turn_index >= len(cls._initiative):
-            cls._turn_index = 0
             cls._round_number += 1
+            cls._initiative = cls._roll_entries(heroes)
+            cls._turn_index = 0
 
     @classmethod
     def round_number(cls):

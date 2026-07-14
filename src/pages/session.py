@@ -11,9 +11,11 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QSpinBox,
     QTextEdit,
+    QTabWidget,
 )
 
 from src.managers.monster_manager import MonsterManager
+from src.managers.story_manager import StoryManager
 from src.database.session_state import SessionState
 
 
@@ -22,7 +24,24 @@ class SessionPage(QWidget):
     def __init__(self):
         super().__init__()
 
-        root = QHBoxLayout(self)
+        outer = QVBoxLayout(self)
+
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs)
+
+        monster_tab = QWidget()
+        self._build_monster_tab(monster_tab)
+        self.tabs.addTab(monster_tab, "Monster")
+
+        story_tab = QWidget()
+        self._build_story_tab(story_tab)
+        self.tabs.addTab(story_tab, "Story")
+
+        self.refresh()
+
+    def _build_monster_tab(self, tab):
+
+        root = QHBoxLayout(tab)
 
         #
         # Left: pick from library, tweak stats, add
@@ -30,7 +49,7 @@ class SessionPage(QWidget):
 
         left = QVBoxLayout()
 
-        title = QLabel("Session")
+        title = QLabel("Monsters")
         title.setStyleSheet("""
             font-size:28px;
             font-weight:bold;
@@ -38,6 +57,17 @@ class SessionPage(QWidget):
         left.addWidget(title)
 
         left.addWidget(QLabel("Start from a Library monster:"))
+
+        self.kind_filter = QComboBox()
+        self.kind_filter.addItems(["Monster", "Villain"])
+        self.kind_filter.currentIndexChanged.connect(self.refresh_type_filter)
+        left.addWidget(self.kind_filter)
+
+        left.addWidget(QLabel("Type:"))
+
+        self.type_filter = QComboBox()
+        self.type_filter.currentIndexChanged.connect(self.refresh_monster_picker)
+        left.addWidget(self.type_filter)
 
         self.monster_picker = QComboBox()
         self.monster_picker.currentIndexChanged.connect(self.load_selected_into_form)
@@ -75,6 +105,11 @@ class SessionPage(QWidget):
         self.behavior.setMaximumHeight(80)
         left.addWidget(self.behavior)
 
+        self.abilities = QTextEdit()
+        self.abilities.setPlaceholderText("Abilities...")
+        self.abilities.setMaximumHeight(80)
+        left.addWidget(self.abilities)
+
         self.add_button = QPushButton("Add to Session")
         self.add_button.clicked.connect(self.add_to_session)
         left.addWidget(self.add_button)
@@ -105,7 +140,21 @@ class SessionPage(QWidget):
 
         root.addLayout(right, 1)
 
-        self.refresh()
+    def _build_story_tab(self, tab):
+
+        layout = QVBoxLayout(tab)
+
+        title = QLabel("Story")
+        title.setStyleSheet("""
+            font-size:28px;
+            font-weight:bold;
+        """)
+        layout.addWidget(title)
+
+        self.story_text = QTextEdit()
+        self.story_text.setPlaceholderText("Write the story for this session...")
+        self.story_text.textChanged.connect(self.save_story)
+        layout.addWidget(self.story_text)
 
     def showEvent(self, event):
 
@@ -114,24 +163,68 @@ class SessionPage(QWidget):
 
     def refresh(self):
 
-        self.monsters = MonsterManager.load_monsters()
+        self.all_monsters = MonsterManager.load_monsters()
+
+        self.refresh_type_filter()
+        self.refresh_pool_list()
+        self.load_story_text()
+
+    def selected_kind(self):
+        return "villain" if self.kind_filter.currentText() == "Villain" else "monster"
+
+    def refresh_type_filter(self):
+
+        kind = self.selected_kind()
+
+        types = sorted({
+            m.creature_type or "Unsorted"
+            for m in self.all_monsters if m.kind == kind
+        })
+
+        self.type_filter.blockSignals(True)
+        self.type_filter.clear()
+        self.type_filter.addItem("All Types")
+        self.type_filter.addItems(types)
+        self.type_filter.blockSignals(False)
+
+        self.refresh_monster_picker()
+
+    def refresh_monster_picker(self):
+
+        kind = self.selected_kind()
+        type_choice = self.type_filter.currentText()
+
+        self.filtered_monsters = [
+            m for m in self.all_monsters
+            if m.kind == kind
+            and (type_choice in ("All Types", "") or (m.creature_type or "Unsorted") == type_choice)
+        ]
 
         self.monster_picker.blockSignals(True)
         self.monster_picker.clear()
 
-        for monster in self.monsters:
+        for monster in self.filtered_monsters:
             self.monster_picker.addItem(monster.name)
 
         self.monster_picker.blockSignals(False)
 
         self.load_selected_into_form()
-        self.refresh_pool_list()
+
+    def load_story_text(self):
+
+        self.story_text.blockSignals(True)
+        self.story_text.setPlainText(StoryManager.load_story())
+        self.story_text.blockSignals(False)
+
+    def save_story(self):
+
+        StoryManager.save_story(self.story_text.toPlainText())
 
     def load_selected_into_form(self):
 
         index = self.monster_picker.currentIndex()
 
-        if not (0 <= index < len(self.monsters)):
+        if not (0 <= index < len(self.filtered_monsters)):
             self.name.setText("")
             self.hp.setValue(0)
             self.max_hp.setValue(1)
@@ -139,9 +232,10 @@ class SessionPage(QWidget):
             self.speed.setValue(0)
             self.xp.setValue(0)
             self.behavior.setPlainText("")
+            self.abilities.setPlainText("")
             return
 
-        monster = self.monsters[index]
+        monster = self.filtered_monsters[index]
 
         self.name.setText(monster.name)
         self.hp.setValue(monster.hp)
@@ -150,6 +244,7 @@ class SessionPage(QWidget):
         self.speed.setValue(monster.speed)
         self.xp.setValue(monster.xp)
         self.behavior.setPlainText(monster.behavior)
+        self.abilities.setPlainText(monster.abilities)
 
     def refresh_pool_list(self):
 
@@ -176,7 +271,9 @@ class SessionPage(QWidget):
             ac=self.ac.value(),
             speed=self.speed.value(),
             xp=self.xp.value(),
+            kind=self.selected_kind(),
             behavior=self.behavior.toPlainText(),
+            abilities=self.abilities.toPlainText(),
         )
 
         self.refresh_pool_list()

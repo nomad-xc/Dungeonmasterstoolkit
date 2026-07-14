@@ -31,7 +31,9 @@ class Hero:
     base_armour: int = 10
     armour_bonus: int = 0
 
+    weapon: str = ""
     weapon_bonus: int = 0
+    weapon_bonus_type: str = "DMG"
     trinket: str = ""
 
     speed: int = 30

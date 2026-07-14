@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QGridLayout,
     QFormLayout,
     QLineEdit,
     QSpinBox,
@@ -126,54 +125,25 @@ class HeroPanel(QWidget):
         self.total_armour_label = QLabel("0")
         form.addRow("Total Armour", self.total_armour_label)
 
+        self.weapon = QLineEdit()
+        form.addRow("Weapon", self.weapon)
+
+        weapon_bonus_row = QHBoxLayout()
+
         self.weapon_bonus = QSpinBox()
         self.weapon_bonus.setRange(0, 99)
-        form.addRow("Weapon Bonus", self.weapon_bonus)
+        weapon_bonus_row.addWidget(self.weapon_bonus)
+
+        self.weapon_bonus_type_button = QPushButton("DMG")
+        self.weapon_bonus_type_button.clicked.connect(self.toggle_weapon_bonus_type)
+        weapon_bonus_row.addWidget(self.weapon_bonus_type_button)
+
+        form.addRow("Weapon Bonus", weapon_bonus_row)
 
         self.trinket = QLineEdit()
         form.addRow("Trinket", self.trinket)
 
         root.addLayout(form)
-
-        #
-        # Conditions
-        #
-
-        conditions_label = QLabel("Conditions")
-        conditions_label.setStyleSheet("font-weight:bold;")
-        root.addWidget(conditions_label)
-
-        conditions_grid = QGridLayout()
-
-        self.condition_buttons = {}
-
-        for index, condition in enumerate(Hero.CONDITIONS):
-
-            button = QPushButton(condition)
-            button.setCheckable(True)
-            button.setStyleSheet("""
-                QPushButton {
-                    background:#2b2b2b;
-                    color:white;
-                    border:2px solid #555;
-                    border-radius:8px;
-                    padding:6px;
-                }
-
-                QPushButton:checked {
-                    background:#8b1a1a;
-                    border:2px solid #d4af37;
-                }
-            """)
-
-            self.condition_buttons[condition] = button
-
-            row = index // 4
-            col = index % 4
-
-            conditions_grid.addWidget(button, row, col)
-
-        root.addLayout(conditions_grid)
 
         #
         # Notes
@@ -259,15 +229,19 @@ class HeroPanel(QWidget):
         self.armour_bonus.setValue(hero.armour_bonus)
         self.update_total_armour()
 
+        self.weapon.setText(hero.weapon)
         self.weapon_bonus.setValue(hero.weapon_bonus)
+        self.weapon_bonus_type_button.setText(hero.weapon_bonus_type)
         self.trinket.setText(hero.trinket)
-
-        for condition, button in self.condition_buttons.items():
-            button.setChecked(condition in hero.conditions)
 
         self.notes.setPlainText(hero.notes)
 
         self.update_portrait_preview()
+
+    def toggle_weapon_bonus_type(self):
+
+        new_type = "ATK" if self.weapon_bonus_type_button.text() == "DMG" else "DMG"
+        self.weapon_bonus_type_button.setText(new_type)
 
     def toggle_dm(self, checked):
 
@@ -307,14 +281,10 @@ class HeroPanel(QWidget):
         self.hero.base_armour = self.base_armour.value()
         self.hero.armour_bonus = self.armour_bonus.value()
 
+        self.hero.weapon = self.weapon.text()
         self.hero.weapon_bonus = self.weapon_bonus.value()
+        self.hero.weapon_bonus_type = self.weapon_bonus_type_button.text()
         self.hero.trinket = self.trinket.text()
-
-        self.hero.conditions = [
-            condition
-            for condition, button in self.condition_buttons.items()
-            if button.isChecked()
-        ]
 
         self.hero.notes = self.notes.toPlainText()
 

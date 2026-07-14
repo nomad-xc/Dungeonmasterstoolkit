@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
     QPushButton,
-    QSpinBox,
     QFrame,
     QScrollArea,
     QMessageBox,
@@ -44,6 +43,50 @@ def condition_button_style():
             border:2px solid #d4af37;
         }
     """
+
+
+def hp_bar_color(ratio):
+
+    ratio = max(0.0, min(1.0, ratio))
+
+    red = (224, 60, 60)
+    green = (60, 200, 80)
+
+    r = int(red[0] + (green[0] - red[0]) * ratio)
+    g = int(red[1] + (green[1] - red[1]) * ratio)
+    b = int(red[2] + (green[2] - red[2]) * ratio)
+
+    return f"rgb({r},{g},{b})"
+
+
+def bar_style(chunk_color):
+    return f"""
+        QProgressBar {{
+            border:2px solid #555;
+            border-radius:6px;
+            text-align:center;
+            color:white;
+            background:#1a1a1a;
+        }}
+
+        QProgressBar::chunk {{
+            background-color:{chunk_color};
+            border-radius:4px;
+        }}
+    """
+
+
+def make_step_row(deltas, handler):
+
+    row = QHBoxLayout()
+
+    for delta in deltas:
+
+        button = QPushButton(f"{delta:+d}")
+        button.clicked.connect(lambda checked=False, d=delta: handler(d))
+        row.addWidget(button)
+
+    return row
 
 
 class HeroOverviewCard(QFrame):
@@ -132,20 +175,9 @@ class HeroOverviewCard(QFrame):
         self.xp_bar.setTextVisible(True)
         xp_row.addWidget(self.xp_bar)
 
-        xp_add = QPushButton("+XP")
-        xp_add.clicked.connect(self.add_xp)
-        xp_row.addWidget(xp_add)
+        xp_row.addLayout(make_step_row([1, 5], self.add_xp))
 
         layout.addLayout(xp_row)
-
-        #
-        # Shared amount
-        #
-
-        self.amount = QSpinBox()
-        self.amount.setRange(1, 20)
-        self.amount.setValue(1)
-        layout.addWidget(self.amount)
 
         #
         # HP / MP
@@ -155,39 +187,22 @@ class HeroOverviewCard(QFrame):
 
         hp_col = QVBoxLayout()
 
-        self.hp_label = QLabel()
-        hp_col.addWidget(self.hp_label)
+        self.hp_bar = QProgressBar()
+        self.hp_bar.setTextVisible(True)
+        hp_col.addWidget(self.hp_bar)
 
-        hp_buttons = QHBoxLayout()
-
-        hp_damage = QPushButton("HP -")
-        hp_damage.clicked.connect(self.damage_hp)
-        hp_buttons.addWidget(hp_damage)
-
-        hp_heal = QPushButton("HP +")
-        hp_heal.clicked.connect(self.heal_hp)
-        hp_buttons.addWidget(hp_heal)
-
-        hp_col.addLayout(hp_buttons)
+        hp_col.addLayout(make_step_row([-1, 1], self.adjust_hp))
 
         stats_row.addLayout(hp_col)
 
         mp_col = QVBoxLayout()
 
-        self.mp_label = QLabel()
-        mp_col.addWidget(self.mp_label)
+        self.mp_bar = QProgressBar()
+        self.mp_bar.setTextVisible(True)
+        self.mp_bar.setStyleSheet(bar_style("#3b82f6"))
+        mp_col.addWidget(self.mp_bar)
 
-        mp_buttons = QHBoxLayout()
-
-        mp_damage = QPushButton("MP -")
-        mp_damage.clicked.connect(self.damage_mp)
-        mp_buttons.addWidget(mp_damage)
-
-        mp_heal = QPushButton("MP +")
-        mp_heal.clicked.connect(self.heal_mp)
-        mp_buttons.addWidget(mp_heal)
-
-        mp_col.addLayout(mp_buttons)
+        mp_col.addLayout(make_step_row([-1, 1], self.adjust_mp))
 
         stats_row.addLayout(mp_col)
 
@@ -206,6 +221,22 @@ class HeroOverviewCard(QFrame):
         armour_speed_row.addWidget(self.speed_label)
 
         layout.addLayout(armour_speed_row)
+
+        #
+        # Weapon
+        #
+
+        self.weapon_label = QLabel()
+        layout.addWidget(self.weapon_label)
+
+        #
+        # Notes (read-only, edited on the Heroes page)
+        #
+
+        self.notes_label = QLabel()
+        self.notes_label.setWordWrap(True)
+        self.notes_label.setStyleSheet("color:#bbb; font-style:italic;")
+        layout.addWidget(self.notes_label)
 
         self.update_display()
 
@@ -246,8 +277,15 @@ class HeroOverviewCard(QFrame):
             self.xp_bar.setValue(1)
             self.xp_bar.setFormat("MAX LEVEL")
 
-        self.hp_label.setText(f"HP {hero.hp}/{hero.max_hp}")
-        self.mp_label.setText(f"MP {hero.mp}/{hero.max_mp}")
+        self.hp_bar.setRange(0, max(1, hero.max_hp))
+        self.hp_bar.setValue(hero.hp)
+        self.hp_bar.setFormat(f"HP {hero.hp}/{hero.max_hp}")
+        ratio = hero.hp / hero.max_hp if hero.max_hp else 0
+        self.hp_bar.setStyleSheet(bar_style(hp_bar_color(ratio)))
+
+        self.mp_bar.setRange(0, max(1, hero.max_mp))
+        self.mp_bar.setValue(hero.mp)
+        self.mp_bar.setFormat(f"MP {hero.mp}/{hero.max_mp}")
 
         armour_bonus_text = f"+{hero.armour_bonus}" if hero.armour_bonus else "+0"
         self.armour_label.setText(
@@ -255,35 +293,32 @@ class HeroOverviewCard(QFrame):
         )
         self.speed_label.setText(f"Speed: {hero.speed}")
 
+        weapon_text = hero.weapon if hero.weapon else "—"
+        self.weapon_label.setText(
+            f"Weapon: {weapon_text} ({hero.weapon_bonus_type} +{hero.weapon_bonus})"
+        )
+
+        self.notes_label.setText(f"Notes: {hero.notes}" if hero.notes else "")
+
     def save_and_notify(self):
 
         HeroManager.save_hero(self.hero)
         self.update_display()
         self.changed_callback()
 
-    def add_xp(self):
+    def add_xp(self, amount):
 
-        self.hero.add_xp(self.amount.value())
+        self.hero.add_xp(amount)
         self.save_and_notify()
 
-    def damage_hp(self):
+    def adjust_hp(self, delta):
 
-        self.hero.hp = max(0, self.hero.hp - self.amount.value())
+        self.hero.hp = max(0, min(self.hero.max_hp, self.hero.hp + delta))
         self.save_and_notify()
 
-    def heal_hp(self):
+    def adjust_mp(self, delta):
 
-        self.hero.hp = min(self.hero.max_hp, self.hero.hp + self.amount.value())
-        self.save_and_notify()
-
-    def damage_mp(self):
-
-        self.hero.mp = max(0, self.hero.mp - self.amount.value())
-        self.save_and_notify()
-
-    def heal_mp(self):
-
-        self.hero.mp = min(self.hero.max_mp, self.hero.mp + self.amount.value())
+        self.hero.mp = max(0, min(self.hero.max_mp, self.hero.mp + delta))
         self.save_and_notify()
 
     def toggle_condition_handler(self, condition):
@@ -311,9 +346,10 @@ class MonsterInstanceCard(QFrame):
         self.setFrameShape(QFrame.StyledPanel)
 
         border = ACTIVE_BORDER if active else INACTIVE_BORDER
+        background = "#4a1a6b" if instance.kind == "villain" else "#2b2b2b"
         self.setStyleSheet(f"""
         QFrame {{
-            background:#2b2b2b;
+            background:{background};
             {border}
             border-radius:12px;
         }}
@@ -334,43 +370,67 @@ class MonsterInstanceCard(QFrame):
             initiative_label.setStyleSheet("color:#d4af37; font-weight:bold;")
             layout.addWidget(initiative_label)
 
-        self.hp_label = QLabel(f"HP {instance.hp}/{instance.max_hp}")
-        layout.addWidget(self.hp_label)
+        self.hp_bar = QProgressBar()
+        self.hp_bar.setTextVisible(True)
+        self.hp_bar.setRange(0, max(1, instance.max_hp))
+        self.hp_bar.setValue(instance.hp)
+        self.hp_bar.setFormat(f"HP {instance.hp}/{instance.max_hp}")
+        ratio = instance.hp / instance.max_hp if instance.max_hp else 0
+        self.hp_bar.setStyleSheet(bar_style(hp_bar_color(ratio)))
+        layout.addWidget(self.hp_bar)
+
+        stats_row = QHBoxLayout()
+        stats_row.addWidget(QLabel(f"Armour: {instance.ac}"))
+        stats_row.addWidget(QLabel(f"Speed: {instance.speed}"))
+        layout.addLayout(stats_row)
+
+        self.detail_labels = []
+
+        if instance.behavior:
+
+            behavior_label = QLabel(f"Behavior: {instance.behavior}")
+            behavior_label.setWordWrap(True)
+            behavior_label.setStyleSheet("color:#bbb; font-style:italic;")
+            behavior_label.setVisible(False)
+            layout.addWidget(behavior_label)
+
+            self.detail_labels.append(behavior_label)
+
+        if instance.abilities:
+
+            abilities_label = QLabel(f"Abilities: {instance.abilities}")
+            abilities_label.setWordWrap(True)
+            abilities_label.setStyleSheet("color:#bbb; font-style:italic;")
+            abilities_label.setVisible(False)
+            layout.addWidget(abilities_label)
+
+            self.detail_labels.append(abilities_label)
 
         if instance.is_defeated:
             defeated_label = QLabel("DEFEATED")
             defeated_label.setStyleSheet("color:#e05c5c; font-weight:bold;")
             layout.addWidget(defeated_label)
 
-        self.amount = QSpinBox()
-        self.amount.setRange(1, 20)
-        self.amount.setValue(1)
-        layout.addWidget(self.amount)
-
-        hp_row = QHBoxLayout()
-
-        damage = QPushButton("Damage")
-        damage.clicked.connect(self.damage)
-        hp_row.addWidget(damage)
-
-        heal = QPushButton("Heal")
-        heal.clicked.connect(self.heal)
-        hp_row.addWidget(heal)
-
-        layout.addLayout(hp_row)
+        layout.addLayout(make_step_row([-1, 1], self.adjust_hp))
 
         remove = QPushButton("Remove")
         remove.clicked.connect(self.remove)
         layout.addWidget(remove)
 
-    def damage(self):
+    def mousePressEvent(self, event):
 
-        SessionState.damage_instance(self.instance.instance_id, self.amount.value())
-        self.changed_callback()
+        for label in self.detail_labels:
+            label.setVisible(label.isHidden())
 
-    def heal(self):
+        super().mousePressEvent(event)
 
-        SessionState.heal_instance(self.instance.instance_id, self.amount.value())
+    def adjust_hp(self, delta):
+
+        if delta < 0:
+            SessionState.damage_instance(self.instance.instance_id, -delta)
+        else:
+            SessionState.heal_instance(self.instance.instance_id, delta)
+
         self.changed_callback()
 
     def remove(self):
@@ -497,7 +557,7 @@ class GameplayPage(QWidget):
 
     def next_turn(self):
 
-        SessionState.next_turn()
+        SessionState.next_turn(self.active_heroes())
         self.refresh()
 
     def add_random_encounter(self):

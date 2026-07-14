@@ -8,6 +8,9 @@ class Monster:
 
     name: str
 
+    kind: str = "monster"
+    creature_type: str = ""
+
     hp: int = 10
     max_hp: int = 10
 
