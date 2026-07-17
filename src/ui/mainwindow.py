@@ -14,6 +14,7 @@ from src.pages.heroes import HeroesPage
 from src.pages.library import LibraryPage
 from src.pages.session import SessionPage
 from src.pages.gameplay import GameplayPage
+from src.pages.player_display import PlayerDisplayPage
 from src.database.session_state import SessionState
 
 
@@ -72,15 +73,17 @@ class MainWindow(QMainWindow):
 
         self.session_page = SessionPage()
         self.gameplay_page = GameplayPage()
+        self.player_display_page = PlayerDisplayPage(
+            open_library_tokens=self.show_library_tokens_tab
+        )
 
         self.stack.addWidget(self.campaign_page)                    # 0
         self.stack.addWidget(self.heroes_page)                      # 1
         self.stack.addWidget(self.library_page)                     # 2
-        self.stack.addWidget(PlaceholderPage("Scenes"))             # 3
-        self.stack.addWidget(self.session_page)                     # 4
-        self.stack.addWidget(self.gameplay_page)                    # 5
-        self.stack.addWidget(PlaceholderPage("Player Display"))     # 6
-        self.stack.addWidget(PlaceholderPage("Settings"))           # 7
+        self.stack.addWidget(self.session_page)                     # 3
+        self.stack.addWidget(self.gameplay_page)                    # 4
+        self.stack.addWidget(self.player_display_page)              # 5
+        self.stack.addWidget(PlaceholderPage("Settings"))           # 6
 
         root.addWidget(self.stack)
 
@@ -107,11 +110,19 @@ class MainWindow(QMainWindow):
                 5: 4,
                 6: 5,
                 7: 6,
-                8: 7,
             }
 
         if row in mapping:
             self.stack.setCurrentIndex(mapping[row])
+
+    def show_library_tokens_tab(self):
+
+        for i in range(self.library_page.tabs.count()):
+            if self.library_page.tabs.tabText(i) == "Tokens":
+                self.library_page.tabs.setCurrentIndex(i)
+                break
+
+        self.sidebar.setCurrentRow(1)
 
     def campaign_loaded(self, campaign_name):
 
@@ -127,5 +138,6 @@ class MainWindow(QMainWindow):
         self.heroes_page.refresh()
         self.session_page.refresh()
         self.gameplay_page.refresh()
+        self.player_display_page.refresh()
 
         self.sidebar.setCurrentRow(3)

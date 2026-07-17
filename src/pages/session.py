@@ -1,22 +1,87 @@
+from pathlib import Path
+
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
+    QGridLayout,
     QFormLayout,
     QLabel,
     QPushButton,
-    QListWidget,
+    QFrame,
+    QCheckBox,
     QComboBox,
     QLineEdit,
     QSpinBox,
     QTextEdit,
     QTabWidget,
+    QScrollArea,
+    QMessageBox,
 )
 
 from src.managers.monster_manager import MonsterManager
 from src.managers.story_manager import StoryManager
+from src.managers.map_manager import MapManager
 from src.database.session_state import SessionState
+from src.widgets.map_picker import MapPickerDialog
+
+
+SCENE_THUMB_WIDTH = 160
+SCENE_THUMB_HEIGHT = 100
+
+
+class SceneMapCard(QFrame):
+
+    def __init__(self, scene_map, refresh_callback):
+        super().__init__()
+
+        self.scene_map = scene_map
+        self.refresh_callback = refresh_callback
+
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setStyleSheet("""
+        QFrame{
+            background:#2b2b2b;
+            border:2px solid #555;
+            border-radius:12px;
+        }
+
+        QLabel{
+            color:white;
+        }
+        """)
+
+        layout = QVBoxLayout(self)
+
+        thumb_label = QLabel()
+        thumb_label.setFixedSize(SCENE_THUMB_WIDTH, SCENE_THUMB_HEIGHT)
+        thumb_label.setAlignment(Qt.AlignCenter)
+
+        if scene_map.path and Path(scene_map.path).exists():
+            pixmap = QPixmap(scene_map.path).scaled(
+                SCENE_THUMB_WIDTH,
+                SCENE_THUMB_HEIGHT,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+            thumb_label.setPixmap(pixmap)
+
+        layout.addWidget(thumb_label)
+
+        title = QLabel(scene_map.name)
+        title.setStyleSheet("font-weight:bold;")
+        layout.addWidget(title)
+
+        remove_button = QPushButton("Remove")
+        remove_button.clicked.connect(self.remove)
+        layout.addWidget(remove_button)
+
+    def remove(self):
+
+        SessionState.remove_scene_map(self.scene_map.scene_map_id)
+        self.refresh_callback()
 
 
 class SessionPage(QWidget):
@@ -36,6 +101,10 @@ class SessionPage(QWidget):
         story_tab = QWidget()
         self._build_story_tab(story_tab)
         self.tabs.addTab(story_tab, "Story")
+
+        scene_tab = QWidget()
+        self._build_scene_tab(scene_tab)
+        self.tabs.addTab(scene_tab, "Scene")
 
         self.refresh()
 
@@ -131,12 +200,15 @@ class SessionPage(QWidget):
         """)
         right.addWidget(pool_title)
 
-        self.pool_list = QListWidget()
-        right.addWidget(self.pool_list)
+        self.pool_container = QVBoxLayout()
 
-        self.remove_button = QPushButton("Remove from Session")
-        self.remove_button.clicked.connect(self.remove_selected)
-        right.addWidget(self.remove_button)
+        pool_widget = QWidget()
+        pool_widget.setLayout(self.pool_container)
+
+        pool_scroll = QScrollArea()
+        pool_scroll.setWidgetResizable(True)
+        pool_scroll.setWidget(pool_widget)
+        right.addWidget(pool_scroll)
 
         root.addLayout(right, 1)
 
@@ -156,6 +228,35 @@ class SessionPage(QWidget):
         self.story_text.textChanged.connect(self.save_story)
         layout.addWidget(self.story_text)
 
+    def _build_scene_tab(self, tab):
+
+        layout = QVBoxLayout(tab)
+
+        title = QLabel("Scene")
+        title.setStyleSheet("""
+            font-size:28px;
+            font-weight:bold;
+        """)
+        layout.addWidget(title)
+
+        add_map_button = QPushButton("Add Map")
+        add_map_button.clicked.connect(self.add_scene_map)
+        layout.addWidget(add_map_button)
+
+        scene_outer = QVBoxLayout()
+
+        self.scene_container = QGridLayout()
+        scene_outer.addLayout(self.scene_container)
+        scene_outer.addStretch()
+
+        scene_widget = QWidget()
+        scene_widget.setLayout(scene_outer)
+
+        scene_scroll = QScrollArea()
+        scene_scroll.setWidgetResizable(True)
+        scene_scroll.setWidget(scene_widget)
+        layout.addWidget(scene_scroll)
+
     def showEvent(self, event):
 
         super().showEvent(event)
@@ -168,6 +269,7 @@ class SessionPage(QWidget):
         self.refresh_type_filter()
         self.refresh_pool_list()
         self.load_story_text()
+        self.refresh_scene_gallery()
 
     def selected_kind(self):
         return "villain" if self.kind_filter.currentText() == "Villain" else "monster"
@@ -248,14 +350,58 @@ class SessionPage(QWidget):
 
     def refresh_pool_list(self):
 
-        self.pool_list.clear()
+        while self.pool_container.count():
+
+            item = self.pool_container.takeAt(0)
+
+            if item.widget():
+                item.widget().deleteLater()
 
         for entry in SessionState.pool():
 
-            self.pool_list.addItem(entry.name)
+            row = QFrame()
+            row.setFrameShape(QFrame.StyledPanel)
+            row.setStyleSheet("""
+                QFrame {
+                    background:#2b2b2b;
+                    border:2px solid #555;
+                    border-radius:8px;
+                }
+            """)
 
-            item = self.pool_list.item(self.pool_list.count() - 1)
-            item.setData(Qt.UserRole, entry.pool_id)
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(8, 8, 8, 8)
+
+            label = QLabel(entry.name)
+            row_layout.addWidget(label)
+
+            row_layout.addStretch()
+
+            random_checkbox = QCheckBox("Random Encounter")
+            random_checkbox.setChecked(entry.random_encounter)
+            random_checkbox.toggled.connect(
+                lambda checked, pid=entry.pool_id: self.toggle_random_encounter(pid, checked)
+            )
+            row_layout.addWidget(random_checkbox)
+
+            remove_button = QPushButton("Remove")
+            remove_button.clicked.connect(
+                lambda checked=False, pid=entry.pool_id: self.remove_pool_entry(pid)
+            )
+            row_layout.addWidget(remove_button)
+
+            self.pool_container.addWidget(row)
+
+        self.pool_container.addStretch()
+
+    def toggle_random_encounter(self, pool_id, checked):
+
+        SessionState.set_random_encounter(pool_id, checked)
+
+    def remove_pool_entry(self, pool_id):
+
+        SessionState.remove_from_pool(pool_id)
+        self.refresh_pool_list()
 
     def add_to_session(self):
 
@@ -278,15 +424,45 @@ class SessionPage(QWidget):
 
         self.refresh_pool_list()
 
-    def remove_selected(self):
+    def add_scene_map(self):
 
-        item = self.pool_list.currentItem()
+        maps = MapManager.load_maps()
 
-        if item is None:
+        if not maps:
+            QMessageBox.information(
+                self,
+                "No Maps in Library",
+                "Upload maps on the Library tab first."
+            )
             return
 
-        pool_id = item.data(Qt.UserRole)
+        dialog = MapPickerDialog(maps, self)
 
-        SessionState.remove_from_pool(pool_id)
+        if dialog.exec():
 
-        self.refresh_pool_list()
+            entry = dialog.selected_map()
+
+            if entry is not None:
+                SessionState.add_scene_map(entry.name, entry.path)
+
+        self.refresh_scene_gallery()
+
+    def refresh_scene_gallery(self):
+
+        while self.scene_container.count():
+
+            item = self.scene_container.takeAt(0)
+
+            if item.widget():
+                item.widget().deleteLater()
+
+        for index, scene_map in enumerate(SessionState.scene_maps()):
+
+            row = index // 3
+            col = index % 3
+
+            self.scene_container.addWidget(
+                SceneMapCard(scene_map, self.refresh_scene_gallery),
+                row,
+                col
+            )

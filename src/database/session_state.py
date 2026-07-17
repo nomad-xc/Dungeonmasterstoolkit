@@ -17,9 +17,19 @@ class SessionMonster:
     xp: int
 
     kind: str = "monster"
+    random_encounter: bool = False
 
     behavior: str = ""
     abilities: str = ""
+
+
+@dataclass
+class SceneMap:
+
+    scene_map_id: int
+
+    name: str
+    path: str
 
 
 @dataclass
@@ -60,6 +70,9 @@ class SessionState:
     _next_pool_id = 1
     _next_instance_id = 1
 
+    _scene_maps = []
+    _next_scene_map_id = 1
+
     @classmethod
     def reset(cls):
 
@@ -72,6 +85,9 @@ class SessionState:
 
         cls._next_pool_id = 1
         cls._next_instance_id = 1
+
+        cls._scene_maps = []
+        cls._next_scene_map_id = 1
 
     #
     # Session monster pool — independent, editable copies, never touch the
@@ -109,6 +125,13 @@ class SessionState:
 
         cls._pool = [p for p in cls._pool if p.pool_id != pool_id]
 
+    @classmethod
+    def set_random_encounter(cls, pool_id, value):
+
+        for entry in cls._pool:
+            if entry.pool_id == pool_id:
+                entry.random_encounter = value
+
     #
     # Live encounter
     #
@@ -118,12 +141,7 @@ class SessionState:
         return list(cls._encounter)
 
     @classmethod
-    def add_random_encounter(cls):
-
-        if not cls._pool:
-            return None
-
-        template = random.choice(cls._pool)
+    def _spawn_instance(cls, template):
 
         existing = sum(
             1 for m in cls._encounter if m.template_name == template.name
@@ -148,6 +166,26 @@ class SessionState:
         cls._encounter.append(instance)
 
         return instance
+
+    @classmethod
+    def add_random_encounter(cls):
+
+        candidates = [p for p in cls._pool if p.random_encounter]
+
+        if not candidates:
+            return None
+
+        return cls._spawn_instance(random.choice(candidates))
+
+    @classmethod
+    def add_specific_encounter(cls, pool_id):
+
+        template = next((p for p in cls._pool if p.pool_id == pool_id), None)
+
+        if template is None:
+            return None
+
+        return cls._spawn_instance(template)
 
     @classmethod
     def remove_instance(cls, instance_id):
@@ -265,3 +303,34 @@ class SessionState:
     @classmethod
     def round_number(cls):
         return cls._round_number
+
+    #
+    # Scene maps — this session's working set of maps, pulled from the
+    # (global) Map Library. Ephemeral, session-scoped, never touches the
+    # Library.
+    #
+
+    @classmethod
+    def scene_maps(cls):
+        return list(cls._scene_maps)
+
+    @classmethod
+    def add_scene_map(cls, name, path):
+
+        entry = SceneMap(
+            scene_map_id=cls._next_scene_map_id,
+            name=name,
+            path=path,
+        )
+
+        cls._next_scene_map_id += 1
+        cls._scene_maps.append(entry)
+
+        return entry
+
+    @classmethod
+    def remove_scene_map(cls, scene_map_id):
+
+        cls._scene_maps = [
+            m for m in cls._scene_maps if m.scene_map_id != scene_map_id
+        ]

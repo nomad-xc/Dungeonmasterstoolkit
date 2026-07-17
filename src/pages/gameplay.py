@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QMessageBox,
     QProgressBar,
+    QInputDialog,
 )
 
 from src.models.hero import Hero
@@ -45,7 +46,7 @@ def condition_button_style():
     """
 
 
-def hp_bar_color(ratio):
+def hp_ratio_rgb(ratio):
 
     ratio = max(0.0, min(1.0, ratio))
 
@@ -55,6 +56,13 @@ def hp_bar_color(ratio):
     r = int(red[0] + (green[0] - red[0]) * ratio)
     g = int(red[1] + (green[1] - red[1]) * ratio)
     b = int(red[2] + (green[2] - red[2]) * ratio)
+
+    return (r, g, b)
+
+
+def hp_bar_color(ratio):
+
+    r, g, b = hp_ratio_rgb(ratio)
 
     return f"rgb({r},{g},{b})"
 
@@ -521,9 +529,17 @@ class GameplayPage(QWidget):
 
         right = QVBoxLayout()
 
+        encounter_buttons = QHBoxLayout()
+
         self.random_encounter_button = PrimaryButton("Random Encounter")
         self.random_encounter_button.clicked.connect(self.add_random_encounter)
-        right.addWidget(self.random_encounter_button)
+        encounter_buttons.addWidget(self.random_encounter_button)
+
+        self.select_monster_button = PrimaryButton("Select Monster")
+        self.select_monster_button.clicked.connect(self.select_monster)
+        encounter_buttons.addWidget(self.select_monster_button)
+
+        right.addLayout(encounter_buttons)
 
         self.encounter_container = QVBoxLayout()
 
@@ -567,9 +583,43 @@ class GameplayPage(QWidget):
         if instance is None:
             QMessageBox.information(
                 self,
+                "No Random Encounters in Session",
+                "Tick 'Random Encounter' on a monster in the session pool "
+                "(Session tab) first."
+            )
+
+        self.refresh()
+
+    def select_monster(self):
+
+        pool = SessionState.pool()
+
+        if not pool:
+            QMessageBox.information(
+                self,
                 "No Monsters in Session",
                 "Add monsters to the session pool on the Session tab first."
             )
+            return
+
+        names = [entry.name for entry in pool]
+
+        name, ok = QInputDialog.getItem(
+            self,
+            "Select Monster",
+            "Monster:",
+            names,
+            0,
+            False
+        )
+
+        if not ok or not name:
+            return
+
+        entry = next((e for e in pool if e.name == name), None)
+
+        if entry is not None:
+            SessionState.add_specific_encounter(entry.pool_id)
 
         self.refresh()
 

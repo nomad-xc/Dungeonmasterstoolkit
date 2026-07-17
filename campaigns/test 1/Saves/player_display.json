@@ -1,0 +1,102 @@
+{
+    "backdrop_image": "campaigns/test 1/Images/Untitled.jpg",
+    "background_map": "library/maps/images/3207759-44a3c368-655c-11f1-a5c7-def51f03f126.webp",
+    "background_x": 0.7588832974712432,
+    "background_y": 66.56969440216164,
+    "background_width": 1515.4087813731876,
+    "background_height": 1060.4910882789377,
+    "background_rotation": 0.0,
+    "background_locked": true,
+    "widgets": [
+        {
+            "widget_id": 1,
+            "type": "hero",
+            "x": 2301.389653123289,
+            "y": 412.91577262239065,
+            "width": 160,
+            "height": 200,
+            "rotation": 0.0,
+            "visible": true,
+            "hero_name": "basille"
+        },
+        {
+            "widget_id": 2,
+            "type": "hero",
+            "x": 2059.618640552432,
+            "y": -393.9770180298477,
+            "width": 160,
+            "height": 200,
+            "rotation": 0.0,
+            "visible": true,
+            "hero_name": "nomad"
+        },
+        {
+            "widget_id": 5,
+            "type": "token",
+            "x": -543.230717474154,
+            "y": 481.335328409245,
+            "width": 150,
+            "height": 150,
+            "rotation": 0.0,
+            "visible": true,
+            "image_path": "library/tokens/images/Treasure.png"
+        },
+        {
+            "widget_id": 10,
+            "type": "hero",
+            "x": 1186.626746506986,
+            "y": 4.0799333888426474,
+            "width": 74.85029940119796,
+            "height": 89.84179850124897,
+            "rotation": 180.61344944451042,
+            "visible": true,
+            "locked": true,
+            "hero_name": "nomad"
+        },
+        {
+            "widget_id": 11,
+            "type": "initiative",
+            "x": 429.7405189620759,
+            "y": 1135.1373855120733,
+            "width": 424,
+            "height": 60,
+            "rotation": 0.0,
+            "visible": true,
+            "locked": true
+        },
+        {
+            "widget_id": 12,
+            "type": "initiative",
+            "x": 444.9101796407185,
+            "y": 4.079933388842619,
+            "width": 424,
+            "height": 60,
+            "rotation": 180.0170971256349,
+            "visible": true,
+            "locked": true
+        },
+        {
+            "widget_id": 13,
+            "type": "initiative",
+            "x": 1344.7105788423155,
+            "y": 568.609492089925,
+            "width": 424,
+            "height": 60,
+            "rotation": -89.89067081705281,
+            "visible": true,
+            "locked": true
+        },
+        {
+            "widget_id": 14,
+            "type": "hero",
+            "x": 254.8902195608781,
+            "y": -12.90591174021656,
+            "width": 70.05988023952096,
+            "height": 113.82181515403832,
+            "rotation": 181.49737931876348,
+            "visible": true,
+            "locked": false,
+            "hero_name": "basille"
+        }
+    ]
+}
