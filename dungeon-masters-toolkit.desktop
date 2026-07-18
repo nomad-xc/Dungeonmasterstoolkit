@@ -2,6 +2,6 @@
 Type=Application
 Name=Dungeon Master's Toolkit
 Exec=/home/deck/Projects/DungeonMastersToolkit/run.sh
-Icon=/home/deck/Projects/DungeonMastersToolkit/assets/icon.png
+Icon=/home/deck/Projects/DungeonMastersToolkit/assets/icon.jpg
 Terminal=false
 Categories=Game;
