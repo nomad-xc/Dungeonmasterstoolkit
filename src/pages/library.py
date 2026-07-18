@@ -72,11 +72,6 @@ class MonsterCard(QFrame):
         self.refresh_callback = refresh_callback
 
         self.setFrameShape(QFrame.StyledPanel)
-        # Must be >= this card's actual content height (portrait + name + 4
-        # stat rows + delete button, ~266px) - a minimum shorter than the
-        # real content let Qt compress the card below what it needed in some
-        # layouts, which visually overlapped the portrait and name text.
-        self.setMinimumHeight(270)
         # Fixed (not just capped) width - a squeeze-compressible width let the
         # card get narrower than its content needed, which visually overlapped
         # the portrait and name text at small window sizes.
@@ -133,6 +128,12 @@ class MonsterCard(QFrame):
         delete_button = QPushButton("Delete")
         delete_button.clicked.connect(self.delete_monster)
         layout.addWidget(delete_button)
+
+        # Computed from the live layout (not a hardcoded guess) so it's
+        # always tall enough for whatever fonts are actually installed on
+        # the machine this runs on - a fixed number measured on one system
+        # can come up short on another and let the portrait and name overlap.
+        self.setMinimumHeight(self.sizeHint().height())
 
     def mouseDoubleClickEvent(self, event):
 
@@ -295,6 +296,11 @@ class TokenCard(QFrame):
         delete_button = QPushButton("Delete")
         delete_button.clicked.connect(self.delete_token)
         layout.addWidget(delete_button)
+
+        # 220 keeps it matching MonsterCard's height for a consistent grid,
+        # but never less than the live content actually needs (fonts vary by
+        # machine) - whichever is taller wins.
+        self.setMinimumHeight(max(220, self.sizeHint().height()))
 
     def mouseDoubleClickEvent(self, event):
 
