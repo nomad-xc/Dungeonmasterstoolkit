@@ -1,11 +1,12 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QRectF
-from PySide6.QtGui import QPixmap, QPen, QColor
+from PySide6.QtGui import QPixmap, QPen, QColor, QTransform
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
+    QGridLayout,
     QLabel,
     QPushButton,
     QCheckBox,
@@ -13,7 +14,8 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QScrollArea,
-    QTabWidget,
+    QStackedWidget,
+    QButtonGroup,
     QGraphicsView,
     QGraphicsPixmapItem,
     QGraphicsRectItem,
@@ -27,6 +29,7 @@ from src.database.current_campaign import CurrentCampaign
 from src.database.session_state import SessionState
 from src.widgets.portrait_picker import pick_and_copy_portrait
 from src.widgets.primary_button import PrimaryButton
+from src.widgets.sound_player import play_sound
 from src.widgets.canvas_items import (
     DisplayScene,
     TokenItem,
@@ -45,6 +48,22 @@ MAP_THUMB_HEIGHT = 115
 
 TOKEN_THUMB_SIZE = 90
 HERO_THUMB_SIZE = 90
+
+TAB_BUTTON_STYLE = """
+    QPushButton {
+        background:#2b2b2b;
+        color:white;
+        border:2px solid #555;
+        border-radius:6px;
+        padding:6px;
+    }
+
+    QPushButton:checked {
+        background:#3a2f18;
+        border:2px solid #d4af37;
+        font-weight:bold;
+    }
+"""
 
 
 class DisplayMapCard(QFrame):
@@ -246,6 +265,15 @@ class FitGraphicsView(QGraphicsView):
 
         self.delete_callback = None
         self.setFocusPolicy(Qt.StrongFocus)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        # DM-only viewing convenience - rotates how this view renders the
+        # scene (e.g. when the physical TV is mounted sideways relative to
+        # where the DM is sitting). Purely a local transform on this one
+        # QGraphicsView; the TV window is a separate QGraphicsView on the
+        # same scene and is never touched by this.
+        self.dm_rotation = 0
 
         # Fog of War interaction - None | "sizing" | "explore". While one of
         # these is active, mouse events are consumed here instead of being
@@ -260,7 +288,45 @@ class FitGraphicsView(QGraphicsView):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.fitInView(self.sceneRect(), Qt.IgnoreAspectRatio)
+        self.apply_fit()
+
+    def apply_fit(self):
+
+        self.resetTransform()
+
+        viewport_rect = self.viewport().rect()
+        scene_rect = self.sceneRect()
+
+        if scene_rect.width() <= 0 or scene_rect.height() <= 0:
+            return
+
+        if self.dm_rotation in (90, 270):
+
+            # A 90/270 rotation swaps which scene axis maps to which viewport
+            # axis, so stretching non-uniformly here (like the 0/180 case)
+            # would visibly distort the picture. Scale uniformly instead -
+            # letterboxed if the rotated content doesn't exactly match the
+            # viewport's proportions - so rotating only reorients the view,
+            # never stretches it.
+            candidate_x = viewport_rect.height() / scene_rect.width()
+            candidate_y = viewport_rect.width() / scene_rect.height()
+            scale_x = scale_y = min(candidate_x, candidate_y)
+
+        else:
+            scale_x = viewport_rect.width() / scene_rect.width()
+            scale_y = viewport_rect.height() / scene_rect.height()
+
+        transform = QTransform()
+        transform.rotate(self.dm_rotation)
+        transform.scale(scale_x, scale_y)
+
+        self.setTransform(transform)
+        self.centerOn(scene_rect.center())
+
+    def set_dm_rotation(self, degrees):
+
+        self.dm_rotation = degrees % 360
+        self.apply_fit()
 
     def keyPressEvent(self, event):
 
@@ -385,6 +451,13 @@ class PlayerDisplayPage(QWidget):
         self.random_encounter_button.clicked.connect(self.add_random_encounter)
         top_bar.addWidget(self.random_encounter_button)
 
+        self.rotate_view_button = QPushButton("Rotate View (0°)")
+        self.rotate_view_button.setToolTip(
+            "Rotates only this screen's preview, in 90° steps - the TV Display is unaffected."
+        )
+        self.rotate_view_button.clicked.connect(self.rotate_dm_view)
+        top_bar.addWidget(self.rotate_view_button)
+
         self.tv_button = PrimaryButton("TV Display")
         self.tv_button.clicked.connect(self.open_tv_display)
         top_bar.addWidget(self.tv_button)
@@ -399,8 +472,35 @@ class PlayerDisplayPage(QWidget):
 
         left = QVBoxLayout()
 
-        self.tabs = QTabWidget()
-        self.tabs.setFixedWidth(270)
+        tabs_container = QWidget()
+        tabs_container.setFixedWidth(270)
+
+        tabs_container_layout = QVBoxLayout(tabs_container)
+        tabs_container_layout.setContentsMargins(0, 0, 0, 0)
+
+        tab_button_grid = QGridLayout()
+        tab_button_grid.setSpacing(4)
+        tabs_container_layout.addLayout(tab_button_grid)
+
+        self.tab_stack = QStackedWidget()
+        tabs_container_layout.addWidget(self.tab_stack)
+
+        self.tab_button_group = QButtonGroup(self)
+        self.tab_button_group.setExclusive(True)
+
+        def add_tab(widget, label, row, col):
+
+            self.tab_stack.addWidget(widget)
+
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setStyleSheet(TAB_BUTTON_STYLE)
+            button.clicked.connect(lambda checked=False, w=widget: self.tab_stack.setCurrentWidget(w))
+
+            self.tab_button_group.addButton(button)
+            tab_button_grid.addWidget(button, row, col)
+
+            return button
 
         maps_tab = QWidget()
         maps_tab_layout = QVBoxLayout(maps_tab)
@@ -416,7 +516,7 @@ class PlayerDisplayPage(QWidget):
 
         maps_tab_layout.addWidget(maps_scroll)
 
-        self.tabs.addTab(maps_tab, "Maps")
+        maps_button = add_tab(maps_tab, "Maps", 0, 0)
 
         widgets_tab = QWidget()
         widgets_tab_layout = QVBoxLayout(widgets_tab)
@@ -432,7 +532,7 @@ class PlayerDisplayPage(QWidget):
 
         widgets_tab_layout.addWidget(widgets_scroll)
 
-        self.tabs.addTab(widgets_tab, "Widgets")
+        add_tab(widgets_tab, "Widgets", 1, 0)
 
         fog_tab = QWidget()
         fog_tab_layout = QVBoxLayout(fog_tab)
@@ -488,9 +588,28 @@ class PlayerDisplayPage(QWidget):
 
         fog_tab_layout.addStretch()
 
-        self.tabs.addTab(fog_tab, "FOG")
+        add_tab(fog_tab, "FOG", 0, 1)
 
-        left.addWidget(self.tabs)
+        sounds_tab = QWidget()
+        sounds_tab_layout = QVBoxLayout(sounds_tab)
+
+        self.sounds_container = QVBoxLayout()
+
+        sounds_inner = QWidget()
+        sounds_inner.setLayout(self.sounds_container)
+
+        sounds_scroll = QScrollArea()
+        sounds_scroll.setWidgetResizable(True)
+        sounds_scroll.setWidget(sounds_inner)
+
+        sounds_tab_layout.addWidget(sounds_scroll)
+
+        add_tab(sounds_tab, "Sounds", 1, 1)
+
+        maps_button.setChecked(True)
+        self.tab_stack.setCurrentWidget(maps_tab)
+
+        left.addWidget(tabs_container)
 
         body.addLayout(left)
 
@@ -559,7 +678,7 @@ class PlayerDisplayPage(QWidget):
 
         super().showEvent(event)
         self.refresh()
-        self.view.fitInView(self.scene.sceneRect(), Qt.IgnoreAspectRatio)
+        self.view.apply_fit()
 
     #
     # Refresh
@@ -598,6 +717,7 @@ class PlayerDisplayPage(QWidget):
         self.refresh_maps_list()
         self.refresh_widgets_list()
         self.refresh_fog_tab()
+        self.refresh_sounds_tab()
 
     def refresh_maps_list(self):
 
@@ -612,6 +732,24 @@ class PlayerDisplayPage(QWidget):
             self.maps_container.addWidget(DisplayMapCard(map_obj, self.select_map))
 
         self.maps_container.addStretch()
+
+    def refresh_sounds_tab(self):
+
+        while self.sounds_container.count():
+
+            item = self.sounds_container.takeAt(0)
+
+            if item.widget():
+                item.widget().deleteLater()
+
+        for sound in SessionState.session_sounds():
+
+            button = QPushButton(sound.name)
+            button.clicked.connect(lambda checked=False, path=sound.path: play_sound(path))
+
+            self.sounds_container.addWidget(button)
+
+        self.sounds_container.addStretch()
 
     def refresh_widgets_list(self):
 
@@ -1058,6 +1196,8 @@ class PlayerDisplayPage(QWidget):
                 "Tick 'Random Encounter' on a monster in the session pool "
                 "(Session tab) first."
             )
+        else:
+            play_sound(instance.sound)
 
     #
     # Initiative tracker
@@ -1217,6 +1357,16 @@ class PlayerDisplayPage(QWidget):
         self.visible_checkbox.setEnabled(False)
         self.lock_checkbox.setEnabled(False)
         self.remove_button.setEnabled(False)
+
+    #
+    # DM view rotation (this screen only - never the TV window)
+    #
+
+    def rotate_dm_view(self):
+
+        new_rotation = (self.view.dm_rotation + 90) % 360
+        self.view.set_dm_rotation(new_rotation)
+        self.rotate_view_button.setText(f"Rotate View ({new_rotation}°)")
 
     #
     # TV window

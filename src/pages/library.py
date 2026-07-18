@@ -16,18 +16,36 @@ from PySide6.QtWidgets import (
     QTabWidget,
 )
 
+from src.models.monster import Monster
 from src.managers.monster_manager import MonsterManager
 from src.managers.map_manager import MapManager
 from src.managers.token_manager import TokenManager
+from src.managers.soundboard_manager import SoundboardManager
 from src.widgets.monster_editor import MonsterEditor
 from src.widgets.map_editor import MapEditor
-from src.widgets.portrait_picker import pick_and_copy_images
+from src.widgets.portrait_picker import (
+    pick_and_copy_images,
+    pick_and_copy_sound,
+    pick_and_copy_sounds,
+)
+from src.widgets.sound_player import play_sound
 
 
 PORTRAIT_SIZE = 80
 MAP_THUMB_WIDTH = 220
 MAP_THUMB_HEIGHT = 140
 TOKEN_THUMB_SIZE = 120
+
+AUTO_SOUND_SLOTS = [
+    ("monster_hit", "Monster Hit"),
+    ("monster_dead", "Monster Dead"),
+    ("hero_hit", "Hero Hit"),
+    ("hero_heal", "Hero Heal"),
+    ("hero_death_male", "Hero Death (Male)"),
+    ("hero_death_female", "Hero Death (Female)"),
+    ("level_up", "Level Up"),
+    ("miss", "Miss"),
+]
 
 
 def clear_layout(layout):
@@ -55,6 +73,10 @@ class MonsterCard(QFrame):
 
         self.setFrameShape(QFrame.StyledPanel)
         self.setMinimumHeight(220)
+        # Fixed (not just capped) width - a squeeze-compressible width let the
+        # card get narrower than its content needed, which visually overlapped
+        # the portrait and name text at small window sizes.
+        self.setFixedWidth(220)
 
         self.setStyleSheet("""
         QFrame{
@@ -224,7 +246,8 @@ class TokenCard(QFrame):
         self.refresh_callback = refresh_callback
 
         self.setFrameShape(QFrame.StyledPanel)
-        self.setMinimumHeight(180)
+        self.setMinimumHeight(220)
+        self.setFixedWidth(220)
 
         self.setStyleSheet("""
         QFrame{
@@ -299,6 +322,82 @@ class TokenCard(QFrame):
             self.refresh_callback()
 
 
+class SoundCard(QFrame):
+
+    def __init__(self, sound, refresh_callback):
+        super().__init__()
+
+        self.sound = sound
+        self.refresh_callback = refresh_callback
+
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setMinimumHeight(120)
+
+        self.setStyleSheet("""
+        QFrame{
+            background:#2b2b2b;
+            border:2px solid #555;
+            border-radius:12px;
+        }
+
+        QLabel{
+            color:white;
+        }
+
+        QFrame:hover{
+            border:2px solid #d4af37;
+        }
+        """)
+
+        layout = QVBoxLayout(self)
+
+        title = QLabel(sound.name)
+        title.setStyleSheet("font-weight:bold;")
+        layout.addWidget(title)
+
+        layout.addStretch()
+
+        play_button = QPushButton("Play")
+        play_button.clicked.connect(self.play)
+        layout.addWidget(play_button)
+
+        delete_button = QPushButton("Delete")
+        delete_button.clicked.connect(self.delete_sound)
+        layout.addWidget(delete_button)
+
+    def play(self):
+        play_sound(self.sound.path)
+
+    def mouseDoubleClickEvent(self, event):
+
+        name, ok = QInputDialog.getText(
+            self,
+            "Rename Sound",
+            "Sound Name:",
+            text=self.sound.name
+        )
+
+        if not ok or not name or name == self.sound.name:
+            return
+
+        self.sound.name = name
+        SoundboardManager.save_sound(self.sound)
+
+        self.refresh_callback()
+
+    def delete_sound(self):
+
+        confirm = QMessageBox.question(
+            self,
+            "Delete Sound",
+            f"Delete '{self.sound.name}' from the library?"
+        )
+
+        if confirm == QMessageBox.Yes:
+            SoundboardManager.delete_sound(self.sound)
+            self.refresh_callback()
+
+
 class LibraryPage(QWidget):
 
     def __init__(self):
@@ -321,6 +420,9 @@ class LibraryPage(QWidget):
         )
         self.tabs.addTab(villain_tab, "Villains")
 
+        creature_types_tab = self._build_creature_types_tab()
+        self.tabs.addTab(creature_types_tab, "Creature Types")
+
         self.map_container = QVBoxLayout()
         map_tab = self._build_map_tab(self.map_container)
         self.tabs.addTab(map_tab, "Maps")
@@ -328,6 +430,10 @@ class LibraryPage(QWidget):
         self.token_container = QVBoxLayout()
         token_tab = self._build_token_tab(self.token_container)
         self.tabs.addTab(token_tab, "Tokens")
+
+        self.soundboard_container = QVBoxLayout()
+        soundboard_tab = self._build_soundboard_tab(self.soundboard_container)
+        self.tabs.addTab(soundboard_tab, "Soundboard")
 
         self.refresh()
 
@@ -346,6 +452,67 @@ class LibraryPage(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(sections_widget)
+        layout.addWidget(scroll)
+
+        return tab
+
+    def _build_creature_types_tab(self):
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        title = QLabel("Creature Types")
+        title.setStyleSheet("""
+            font-size:22px;
+            font-weight:bold;
+        """)
+        layout.addWidget(title)
+
+        cards_container = QVBoxLayout()
+
+        for creature_type in Monster.CREATURE_TYPES:
+
+            card = QFrame()
+            card.setFrameShape(QFrame.StyledPanel)
+            card.setStyleSheet("""
+            QFrame{
+                background:#2b2b2b;
+                border:2px solid #555;
+                border-radius:12px;
+            }
+
+            QLabel{
+                color:white;
+            }
+            """)
+
+            card_layout = QVBoxLayout(card)
+
+            name_label = QLabel(creature_type["name"])
+            name_label.setStyleSheet("font-size:18px; font-weight:bold; color:#d4af37;")
+            card_layout.addWidget(name_label)
+
+            description_label = QLabel(creature_type["description"])
+            description_label.setWordWrap(True)
+            card_layout.addWidget(description_label)
+
+            if creature_type["examples"]:
+
+                examples_label = QLabel(f"e.g., {creature_type['examples']}")
+                examples_label.setWordWrap(True)
+                examples_label.setStyleSheet("color:#bbb; font-style:italic;")
+                card_layout.addWidget(examples_label)
+
+            cards_container.addWidget(card)
+
+        cards_container.addStretch()
+
+        cards_widget = QWidget()
+        cards_widget.setLayout(cards_container)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(cards_widget)
         layout.addWidget(scroll)
 
         return tab
@@ -396,6 +563,71 @@ class LibraryPage(QWidget):
 
         return tab
 
+    def _build_soundboard_tab(self, container):
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        auto_title = QLabel("Auto Sounds")
+        auto_title.setStyleSheet("""
+            font-size:18px;
+            font-weight:bold;
+            color:#d4af37;
+        """)
+        layout.addWidget(auto_title)
+
+        self.auto_sound_rows = {}
+
+        auto_grid = QGridLayout()
+
+        for row_index, (key, slot_label) in enumerate(AUTO_SOUND_SLOTS):
+
+            name_label = QLabel(slot_label)
+            name_label.setStyleSheet("font-weight:bold;")
+            auto_grid.addWidget(name_label, row_index, 0)
+
+            file_label = QLabel("Not set")
+            file_label.setStyleSheet("color:#999;")
+            auto_grid.addWidget(file_label, row_index, 1)
+
+            upload_button = QPushButton("Upload")
+            upload_button.clicked.connect(
+                lambda checked=False, k=key: self.upload_auto_sound(k)
+            )
+            auto_grid.addWidget(upload_button, row_index, 2)
+
+            play_button = QPushButton("Play")
+            play_button.clicked.connect(
+                lambda checked=False, k=key: self.play_auto_sound(k)
+            )
+            auto_grid.addWidget(play_button, row_index, 3)
+
+            self.auto_sound_rows[key] = (file_label, play_button)
+
+        layout.addLayout(auto_grid)
+
+        board_title = QLabel("Sound Board")
+        board_title.setStyleSheet("""
+            font-size:18px;
+            font-weight:bold;
+            color:#d4af37;
+        """)
+        layout.addWidget(board_title)
+
+        add_button = QPushButton("Add Sound(s)")
+        add_button.clicked.connect(self.add_sounds)
+        layout.addWidget(add_button)
+
+        sections_widget = QWidget()
+        sections_widget.setLayout(container)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(sections_widget)
+        layout.addWidget(scroll)
+
+        return tab
+
     def showEvent(self, event):
 
         super().showEvent(event)
@@ -407,6 +639,8 @@ class LibraryPage(QWidget):
         self._refresh_section(self.villain_container, "villain")
         self._refresh_maps_section(self.map_container)
         self._refresh_tokens_section(self.token_container)
+        self._refresh_soundboard_section(self.soundboard_container)
+        self.refresh_auto_sounds()
 
     def _refresh_section(self, container, kind):
 
@@ -441,8 +675,14 @@ class LibraryPage(QWidget):
                 grid.addWidget(
                     MonsterCard(monster, self.refresh),
                     row,
-                    col
+                    col,
+                    Qt.AlignLeft | Qt.AlignTop
                 )
+
+            for col in range(3):
+                grid.setColumnStretch(col, 0)
+
+            grid.setColumnStretch(3, 1)
 
             container.addLayout(grid)
 
@@ -555,8 +795,14 @@ class LibraryPage(QWidget):
             grid.addWidget(
                 TokenCard(token, self.refresh),
                 row,
-                col
+                col,
+                Qt.AlignLeft | Qt.AlignTop
             )
+
+        for col in range(4):
+            grid.setColumnStretch(col, 0)
+
+        grid.setColumnStretch(4, 1)
 
         container.addLayout(grid)
         container.addStretch()
@@ -569,6 +815,70 @@ class LibraryPage(QWidget):
 
         for path in paths:
             TokenManager.create_token(Path(path).stem, path)
+
+        if paths:
+            self.refresh()
+
+    def _refresh_soundboard_section(self, container):
+
+        clear_layout(container)
+
+        sounds = SoundboardManager.load_sounds()
+
+        grid = QGridLayout()
+        grid.setSpacing(20)
+
+        for index, sound in enumerate(sounds):
+
+            row = index // 4
+            col = index % 4
+
+            grid.addWidget(
+                SoundCard(sound, self.refresh),
+                row,
+                col
+            )
+
+        container.addLayout(grid)
+        container.addStretch()
+
+    def refresh_auto_sounds(self):
+
+        auto = SoundboardManager.load_auto_sounds()
+
+        for key, (file_label, play_button) in self.auto_sound_rows.items():
+
+            path = getattr(auto, key)
+
+            file_label.setText(Path(path).name if path else "Not set")
+            play_button.setEnabled(bool(path))
+
+    def upload_auto_sound(self, key):
+
+        path = pick_and_copy_sound(self, SoundboardManager.audio_folder())
+
+        if not path:
+            return
+
+        auto = SoundboardManager.load_auto_sounds()
+        setattr(auto, key, path)
+        SoundboardManager.save_auto_sounds(auto)
+
+        self.refresh_auto_sounds()
+
+    def play_auto_sound(self, key):
+
+        auto = SoundboardManager.load_auto_sounds()
+        play_sound(getattr(auto, key))
+
+    def add_sounds(self):
+
+        paths = pick_and_copy_sounds(
+            self, SoundboardManager.audio_folder(), title="Choose Sound Files"
+        )
+
+        for path in paths:
+            SoundboardManager.create_sound(Path(path).stem, path)
 
         if paths:
             self.refresh()

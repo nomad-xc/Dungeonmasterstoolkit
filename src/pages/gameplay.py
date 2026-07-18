@@ -18,8 +18,10 @@ from PySide6.QtWidgets import (
 
 from src.models.hero import Hero
 from src.managers.hero_manager import HeroManager
+from src.managers.soundboard_manager import SoundboardManager
 from src.database.session_state import SessionState
 from src.widgets.primary_button import PrimaryButton
+from src.widgets.sound_player import play_sound
 
 
 PORTRAIT_SIZE = 72
@@ -333,12 +335,35 @@ class HeroOverviewCard(QFrame):
 
     def add_xp(self, amount):
 
+        before_level = self.hero.level
         self.hero.add_xp(amount)
+
+        if self.hero.level > before_level:
+            play_sound(SoundboardManager.load_auto_sounds().level_up)
+
         self.save_and_notify()
 
     def adjust_hp(self, delta):
 
+        before = self.hero.hp
         self.hero.hp = max(0, min(self.hero.max_hp, self.hero.hp + delta))
+
+        if self.hero.hp != before:
+
+            auto = SoundboardManager.load_auto_sounds()
+
+            if delta < 0:
+                if self.hero.hp <= 0:
+                    death_sound = (
+                        auto.hero_death_female if self.hero.gender == "Female"
+                        else auto.hero_death_male
+                    )
+                    play_sound(death_sound)
+                else:
+                    play_sound(auto.hero_hit)
+            else:
+                play_sound(auto.hero_heal)
+
         self.save_and_notify()
 
     def adjust_mp(self, delta):
@@ -486,10 +511,21 @@ class MonsterInstanceCard(QFrame):
 
     def adjust_hp(self, delta):
 
+        before = self.instance.hp
+
         if delta < 0:
             SessionState.damage_instance(self.instance.instance_id, -delta)
         else:
             SessionState.heal_instance(self.instance.instance_id, delta)
+
+        if delta < 0 and self.instance.hp != before:
+
+            auto = SoundboardManager.load_auto_sounds()
+
+            if self.instance.hp <= 0:
+                play_sound(auto.monster_dead)
+            else:
+                play_sound(auto.monster_hit)
 
         self.changed_callback()
 
@@ -523,6 +559,10 @@ class GameplayPage(QWidget):
         self.next_turn_button = PrimaryButton("Next Turn")
         self.next_turn_button.clicked.connect(self.next_turn)
         controls.addWidget(self.next_turn_button)
+
+        self.miss_button = QPushButton("Miss")
+        self.miss_button.clicked.connect(self.play_miss_sound)
+        controls.addWidget(self.miss_button)
 
         self.status_label = QLabel()
         self.status_label.setStyleSheet("font-size:16px; font-weight:bold;")
@@ -615,6 +655,9 @@ class GameplayPage(QWidget):
         super().showEvent(event)
         self.refresh()
 
+    def play_miss_sound(self):
+        play_sound(SoundboardManager.load_auto_sounds().miss)
+
     def active_heroes(self):
         return [h for h in HeroManager.load_heroes() if not h.is_dm]
 
@@ -695,6 +738,8 @@ class GameplayPage(QWidget):
                 "Tick 'Random Encounter' on a monster in the session pool "
                 "(Session tab) first."
             )
+        else:
+            play_sound(instance.sound)
 
         self.refresh()
 
@@ -727,7 +772,11 @@ class GameplayPage(QWidget):
         entry = next((e for e in pool if e.name == name), None)
 
         if entry is not None:
-            SessionState.add_specific_encounter(entry.pool_id)
+
+            instance = SessionState.add_specific_encounter(entry.pool_id)
+
+            if instance is not None:
+                play_sound(instance.sound)
 
         self.refresh()
 

@@ -19,6 +19,7 @@ class Hero:
     hero_class: str
 
     race: str = ""
+    gender: str = "Male"
 
     level: int = 1
 

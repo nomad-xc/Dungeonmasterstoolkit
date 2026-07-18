@@ -8,17 +8,24 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QFormLayout,
     QLineEdit,
+    QComboBox,
     QSpinBox,
     QTextEdit,
     QLabel,
     QPushButton,
 )
 
-from src.widgets.portrait_picker import pick_and_copy_portrait
+from src.models.monster import Monster
+from src.widgets.portrait_picker import pick_and_copy_portrait, pick_and_copy_sound
+from src.widgets.sound_player import play_sound
+
+
+UNSORTED_LABEL = "(Unsorted)"
 
 
 PORTRAIT_SIZE = 120
 PORTRAIT_FOLDER = Path("library/portraits")
+SOUND_FOLDER = Path("library/sounds")
 
 
 class MonsterEditor(QDialog):
@@ -59,6 +66,29 @@ class MonsterEditor(QDialog):
         self.update_portrait_preview()
 
         #
+        # Sound
+        #
+
+        sound_row = QHBoxLayout()
+
+        self.sound_label = QLabel()
+        sound_row.addWidget(self.sound_label)
+
+        self.sound_button = QPushButton("Change Sound")
+        self.sound_button.clicked.connect(self.change_sound)
+        sound_row.addWidget(self.sound_button)
+
+        self.play_sound_button = QPushButton("Play")
+        self.play_sound_button.clicked.connect(self.play_sound)
+        sound_row.addWidget(self.play_sound_button)
+
+        sound_row.addStretch()
+
+        layout.addLayout(sound_row)
+
+        self.update_sound_label()
+
+        #
         # Form
         #
 
@@ -70,8 +100,17 @@ class MonsterEditor(QDialog):
         kind_label = QLabel(monster.kind.capitalize())
         form.addRow("Kind", kind_label)
 
-        self.creature_type = QLineEdit(monster.creature_type)
-        self.creature_type.setPlaceholderText("e.g. Undead, Beast, Dragon...")
+        self.creature_type = QComboBox()
+        self.creature_type.addItem(UNSORTED_LABEL)
+        self.creature_type.addItems([ct["name"] for ct in Monster.CREATURE_TYPES])
+
+        if monster.creature_type:
+
+            if self.creature_type.findText(monster.creature_type) < 0:
+                self.creature_type.addItem(monster.creature_type)
+
+            self.creature_type.setCurrentText(monster.creature_type)
+
         form.addRow("Creature Type", self.creature_type)
 
         self.hp = QSpinBox()
@@ -153,10 +192,30 @@ class MonsterEditor(QDialog):
             self.monster.portrait = path
             self.update_portrait_preview()
 
+    def update_sound_label(self):
+
+        self.sound_label.setText(
+            Path(self.monster.sound).name if self.monster.sound else "No sound set"
+        )
+        self.play_sound_button.setEnabled(bool(self.monster.sound))
+
+    def change_sound(self):
+
+        path = pick_and_copy_sound(self, SOUND_FOLDER)
+
+        if path:
+            self.monster.sound = path
+            self.update_sound_label()
+
+    def play_sound(self):
+        play_sound(self.monster.sound)
+
     def save(self):
 
         self.monster.name = self.name.text()
-        self.monster.creature_type = self.creature_type.text()
+
+        selected_type = self.creature_type.currentText()
+        self.monster.creature_type = "" if selected_type == UNSORTED_LABEL else selected_type
 
         self.monster.hp = self.hp.value()
         self.monster.max_hp = self.max_hp.value()

@@ -80,6 +80,10 @@ class HeroPanel(QWidget):
         self.hero_class = QLineEdit()
         form.addRow("Class", self.hero_class)
 
+        self.gender_button = QPushButton("Male")
+        self.gender_button.clicked.connect(self.toggle_gender)
+        form.addRow("Gender", self.gender_button)
+
         self.is_dm_checkbox = QCheckBox("DM this session (sits out of Gameplay)")
         self.is_dm_checkbox.toggled.connect(self.toggle_dm)
         form.addRow("", self.is_dm_checkbox)
@@ -210,6 +214,7 @@ class HeroPanel(QWidget):
         self.name.setText(hero.name)
         self.race.setText(hero.race)
         self.hero_class.setText(hero.hero_class)
+        self.gender_button.setText(hero.gender or "Male")
 
         self.is_dm_checkbox.blockSignals(True)
         self.is_dm_checkbox.setChecked(hero.is_dm)
@@ -243,6 +248,11 @@ class HeroPanel(QWidget):
         new_type = "ATK" if self.weapon_bonus_type_button.text() == "DMG" else "DMG"
         self.weapon_bonus_type_button.setText(new_type)
 
+    def toggle_gender(self):
+
+        new_gender = "Female" if self.gender_button.text() == "Male" else "Male"
+        self.gender_button.setText(new_gender)
+
     def toggle_dm(self, checked):
 
         if self.hero is None:
@@ -265,6 +275,7 @@ class HeroPanel(QWidget):
         self.hero.name = self.name.text()
         self.hero.race = self.race.text()
         self.hero.hero_class = self.hero_class.text()
+        self.hero.gender = self.gender_button.text()
 
         self.hero.is_dm = self.is_dm_checkbox.isChecked()
 

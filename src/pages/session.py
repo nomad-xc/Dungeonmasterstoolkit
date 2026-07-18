@@ -24,8 +24,11 @@ from PySide6.QtWidgets import (
 from src.managers.monster_manager import MonsterManager
 from src.managers.story_manager import StoryManager
 from src.managers.map_manager import MapManager
+from src.managers.soundboard_manager import SoundboardManager
 from src.database.session_state import SessionState
 from src.widgets.map_picker import MapPickerDialog
+from src.widgets.sound_picker import SoundPickerDialog
+from src.widgets.sound_player import play_sound
 
 
 SCENE_THUMB_WIDTH = 160
@@ -84,10 +87,56 @@ class SceneMapCard(QFrame):
         self.refresh_callback()
 
 
+class SessionSoundCard(QFrame):
+
+    def __init__(self, session_sound, refresh_callback):
+        super().__init__()
+
+        self.session_sound = session_sound
+        self.refresh_callback = refresh_callback
+
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setStyleSheet("""
+        QFrame{
+            background:#2b2b2b;
+            border:2px solid #555;
+            border-radius:12px;
+        }
+
+        QLabel{
+            color:white;
+        }
+        """)
+
+        layout = QVBoxLayout(self)
+
+        title = QLabel(session_sound.name)
+        title.setStyleSheet("font-weight:bold;")
+        layout.addWidget(title)
+
+        play_button = QPushButton("Play")
+        play_button.clicked.connect(self.play)
+        layout.addWidget(play_button)
+
+        remove_button = QPushButton("Remove")
+        remove_button.clicked.connect(self.remove)
+        layout.addWidget(remove_button)
+
+    def play(self):
+        play_sound(self.session_sound.path)
+
+    def remove(self):
+
+        SessionState.remove_session_sound(self.session_sound.session_sound_id)
+        self.refresh_callback()
+
+
 class SessionPage(QWidget):
 
     def __init__(self):
         super().__init__()
+
+        self.current_sound = ""
 
         outer = QVBoxLayout(self)
 
@@ -105,6 +154,10 @@ class SessionPage(QWidget):
         scene_tab = QWidget()
         self._build_scene_tab(scene_tab)
         self.tabs.addTab(scene_tab, "Scene")
+
+        sounds_tab = QWidget()
+        self._build_sounds_tab(sounds_tab)
+        self.tabs.addTab(sounds_tab, "Sounds")
 
         self.refresh()
 
@@ -257,6 +310,35 @@ class SessionPage(QWidget):
         scene_scroll.setWidget(scene_widget)
         layout.addWidget(scene_scroll)
 
+    def _build_sounds_tab(self, tab):
+
+        layout = QVBoxLayout(tab)
+
+        title = QLabel("Sounds")
+        title.setStyleSheet("""
+            font-size:28px;
+            font-weight:bold;
+        """)
+        layout.addWidget(title)
+
+        add_sound_button = QPushButton("Add Sound")
+        add_sound_button.clicked.connect(self.add_session_sound)
+        layout.addWidget(add_sound_button)
+
+        sound_outer = QVBoxLayout()
+
+        self.sound_container = QGridLayout()
+        sound_outer.addLayout(self.sound_container)
+        sound_outer.addStretch()
+
+        sound_widget = QWidget()
+        sound_widget.setLayout(sound_outer)
+
+        sound_scroll = QScrollArea()
+        sound_scroll.setWidgetResizable(True)
+        sound_scroll.setWidget(sound_widget)
+        layout.addWidget(sound_scroll)
+
     def showEvent(self, event):
 
         super().showEvent(event)
@@ -270,6 +352,7 @@ class SessionPage(QWidget):
         self.refresh_pool_list()
         self.load_story_text()
         self.refresh_scene_gallery()
+        self.refresh_sound_gallery()
 
     def selected_kind(self):
         return "villain" if self.kind_filter.currentText() == "Villain" else "monster"
@@ -335,6 +418,7 @@ class SessionPage(QWidget):
             self.xp.setValue(0)
             self.behavior.setPlainText("")
             self.abilities.setPlainText("")
+            self.current_sound = ""
             return
 
         monster = self.filtered_monsters[index]
@@ -347,6 +431,7 @@ class SessionPage(QWidget):
         self.xp.setValue(monster.xp)
         self.behavior.setPlainText(monster.behavior)
         self.abilities.setPlainText(monster.abilities)
+        self.current_sound = monster.sound
 
     def refresh_pool_list(self):
 
@@ -420,6 +505,7 @@ class SessionPage(QWidget):
             kind=self.selected_kind(),
             behavior=self.behavior.toPlainText(),
             abilities=self.abilities.toPlainText(),
+            sound=self.current_sound,
         )
 
         self.refresh_pool_list()
@@ -463,6 +549,47 @@ class SessionPage(QWidget):
 
             self.scene_container.addWidget(
                 SceneMapCard(scene_map, self.refresh_scene_gallery),
+                row,
+                col
+            )
+
+    def add_session_sound(self):
+
+        sounds = SoundboardManager.load_sounds()
+
+        if not sounds:
+            QMessageBox.information(
+                self,
+                "No Sounds in Library",
+                "Upload sounds on the Library tab first."
+            )
+            return
+
+        dialog = SoundPickerDialog(sounds, self)
+
+        if dialog.exec():
+
+            for entry in dialog.selected_sounds():
+                SessionState.add_session_sound(entry.name, entry.path)
+
+        self.refresh_sound_gallery()
+
+    def refresh_sound_gallery(self):
+
+        while self.sound_container.count():
+
+            item = self.sound_container.takeAt(0)
+
+            if item.widget():
+                item.widget().deleteLater()
+
+        for index, session_sound in enumerate(SessionState.session_sounds()):
+
+            row = index // 3
+            col = index % 3
+
+            self.sound_container.addWidget(
+                SessionSoundCard(session_sound, self.refresh_sound_gallery),
                 row,
                 col
             )

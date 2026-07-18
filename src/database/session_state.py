@@ -1,5 +1,9 @@
+import json
 import random
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from src.database.current_campaign import CurrentCampaign
 
 
 @dataclass
@@ -21,12 +25,22 @@ class SessionMonster:
 
     behavior: str = ""
     abilities: str = ""
+    sound: str = ""
 
 
 @dataclass
 class SceneMap:
 
     scene_map_id: int
+
+    name: str
+    path: str
+
+
+@dataclass
+class SessionSound:
+
+    session_sound_id: int
 
     name: str
     path: str
@@ -50,6 +64,7 @@ class MonsterInstance:
 
     behavior: str = ""
     abilities: str = ""
+    sound: str = ""
 
     conditions: list = field(default_factory=list)
 
@@ -73,6 +88,9 @@ class SessionState:
     _scene_maps = []
     _next_scene_map_id = 1
 
+    _session_sounds = []
+    _next_session_sound_id = 1
+
     @classmethod
     def reset(cls):
 
@@ -89,6 +107,10 @@ class SessionState:
         cls._scene_maps = []
         cls._next_scene_map_id = 1
 
+        cls._session_sounds = []
+        cls._next_session_sound_id = 1
+        cls._session_sounds = cls._load_session_sounds()
+
     #
     # Session monster pool — independent, editable copies, never touch the
     # Monster Library. This is what lets a DM add "Zombie" and "Elite Zombie"
@@ -100,7 +122,7 @@ class SessionState:
         return list(cls._pool)
 
     @classmethod
-    def add_to_pool(cls, name, hp, max_hp, ac, speed, xp, kind="monster", behavior="", abilities=""):
+    def add_to_pool(cls, name, hp, max_hp, ac, speed, xp, kind="monster", behavior="", abilities="", sound=""):
 
         entry = SessionMonster(
             pool_id=cls._next_pool_id,
@@ -113,6 +135,7 @@ class SessionState:
             kind=kind,
             behavior=behavior,
             abilities=abilities,
+            sound=sound,
         )
 
         cls._next_pool_id += 1
@@ -160,6 +183,7 @@ class SessionState:
             kind=template.kind,
             behavior=template.behavior,
             abilities=template.abilities,
+            sound=template.sound,
         )
 
         cls._next_instance_id += 1
@@ -347,3 +371,86 @@ class SessionState:
         cls._scene_maps = [
             m for m in cls._scene_maps if m.scene_map_id != scene_map_id
         ]
+
+    #
+    # Session sounds — this session's working set of Sound Board clips, pulled
+    # from the (global) Soundboard Library. Never touches the Library, but
+    # (unlike the pool/encounter/scene maps above) it's saved per-campaign so
+    # the DM doesn't have to re-add the same sounds every time the app opens.
+    #
+
+    @classmethod
+    def _session_sounds_file(cls):
+
+        if not CurrentCampaign.loaded():
+            return None
+
+        return CurrentCampaign.path() / "Saves" / "session_sounds.json"
+
+    @classmethod
+    def _load_session_sounds(cls):
+
+        file = cls._session_sounds_file()
+
+        if file is None or not file.exists():
+            return []
+
+        with open(file, "r") as f:
+            data = json.load(f)
+
+        sounds = []
+
+        for entry in data:
+
+            sounds.append(SessionSound(
+                session_sound_id=cls._next_session_sound_id,
+                name=entry.get("name", ""),
+                path=entry.get("path", ""),
+            ))
+            cls._next_session_sound_id += 1
+
+        return sounds
+
+    @classmethod
+    def _save_session_sounds(cls):
+
+        file = cls._session_sounds_file()
+
+        if file is None:
+            return
+
+        file.parent.mkdir(parents=True, exist_ok=True)
+
+        data = [{"name": s.name, "path": s.path} for s in cls._session_sounds]
+
+        with open(file, "w") as f:
+            json.dump(data, f, indent=4)
+
+    @classmethod
+    def session_sounds(cls):
+        return list(cls._session_sounds)
+
+    @classmethod
+    def add_session_sound(cls, name, path):
+
+        entry = SessionSound(
+            session_sound_id=cls._next_session_sound_id,
+            name=name,
+            path=path,
+        )
+
+        cls._next_session_sound_id += 1
+        cls._session_sounds.append(entry)
+
+        cls._save_session_sounds()
+
+        return entry
+
+    @classmethod
+    def remove_session_sound(cls, session_sound_id):
+
+        cls._session_sounds = [
+            s for s in cls._session_sounds if s.session_sound_id != session_sound_id
+        ]
+
+        cls._save_session_sounds()
