@@ -1,0 +1,4 @@
+campaigns/
+library/
+__pycache__/
+*.pyc
