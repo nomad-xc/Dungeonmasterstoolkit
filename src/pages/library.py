@@ -72,7 +72,11 @@ class MonsterCard(QFrame):
         self.refresh_callback = refresh_callback
 
         self.setFrameShape(QFrame.StyledPanel)
-        self.setMinimumHeight(220)
+        # Must be >= this card's actual content height (portrait + name + 4
+        # stat rows + delete button, ~266px) - a minimum shorter than the
+        # real content let Qt compress the card below what it needed in some
+        # layouts, which visually overlapped the portrait and name text.
+        self.setMinimumHeight(270)
         # Fixed (not just capped) width - a squeeze-compressible width let the
         # card get narrower than its content needed, which visually overlapped
         # the portrait and name text at small window sizes.
