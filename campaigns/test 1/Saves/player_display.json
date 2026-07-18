@@ -1,6 +1,6 @@
 {
     "backdrop_image": "campaigns/test 1/Images/Untitled.jpg",
-    "background_map": "library/maps/images/3207759-44a3c368-655c-11f1-a5c7-def51f03f126.webp",
+    "background_map": "library/maps/images/3207759-a74258aa-712c-11f1-aa9b-aa17850ebf1d.webp",
     "background_x": 0.7588832974712432,
     "background_y": 66.56969440216164,
     "background_width": 1515.4087813731876,
@@ -97,6 +97,73 @@
             "visible": true,
             "locked": false,
             "hero_name": "basille"
+        },
+        {
+            "widget_id": 16,
+            "type": "token",
+            "x": 1255.289421157685,
+            "y": 285.84512905911754,
+            "width": 34.13173652694604,
+            "height": 47.87676935886759,
+            "rotation": 0.0,
+            "visible": false,
+            "locked": true,
+            "image_path": "library/tokens/images/Treasure.png"
+        },
+        {
+            "widget_id": 17,
+            "type": "token",
+            "x": 1252.8942115768461,
+            "y": 630.5578684429641,
+            "width": 68.46307385229534,
+            "height": 88.84263114071598,
+            "rotation": 0.0,
+            "visible": false,
+            "locked": true,
+            "image_path": "library/tokens/images/Shrine.png"
         }
+    ],
+    "fog_enabled": false,
+    "fog_grid_width": 151.69660678642714,
+    "fog_grid_height": 176.85262281432142,
+    "fog_offset_x": 0,
+    "fog_offset_y": 0,
+    "fog_revealed": [
+        [
+            3,
+            1
+        ],
+        [
+            3,
+            2
+        ],
+        [
+            4,
+            1
+        ],
+        [
+            4,
+            2
+        ],
+        [
+            5,
+            1
+        ],
+        [
+            5,
+            2
+        ],
+        [
+            5,
+            3
+        ],
+        [
+            4,
+            3
+        ],
+        [
+            3,
+            3
+        ]
     ]
 }

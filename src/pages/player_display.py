@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QTimer, QRectF
+from PySide6.QtGui import QPixmap, QPen, QColor
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -9,18 +9,22 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QCheckBox,
+    QDoubleSpinBox,
+    QFormLayout,
     QFrame,
     QScrollArea,
     QTabWidget,
     QGraphicsView,
     QGraphicsPixmapItem,
+    QGraphicsRectItem,
+    QMessageBox,
 )
 
-from src.managers.map_manager import MapManager
 from src.managers.token_manager import TokenManager
 from src.managers.hero_manager import HeroManager
 from src.managers.player_display_manager import PlayerDisplayManager
 from src.database.current_campaign import CurrentCampaign
+from src.database.session_state import SessionState
 from src.widgets.portrait_picker import pick_and_copy_portrait
 from src.widgets.primary_button import PrimaryButton
 from src.widgets.canvas_items import (
@@ -28,6 +32,7 @@ from src.widgets.canvas_items import (
     TokenItem,
     HeroRingItem,
     MapBackgroundItem,
+    FogOverlayItem,
     InitiativeTrackerItem,
     SCENE_WIDTH,
     SCENE_HEIGHT,
@@ -242,6 +247,17 @@ class FitGraphicsView(QGraphicsView):
         self.delete_callback = None
         self.setFocusPolicy(Qt.StrongFocus)
 
+        # Fog of War interaction - None | "sizing" | "explore". While one of
+        # these is active, mouse events are consumed here instead of being
+        # handed to the scene's normal item selection/drag handling.
+        self.fog_item = None
+        self.fog_mode = None
+        self.fog_reveal_callback = None
+        self.fog_size_callback = None
+
+        self._sizing_start = None
+        self._sizing_preview = None
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.fitInView(self.sceneRect(), Qt.IgnoreAspectRatio)
@@ -255,6 +271,82 @@ class FitGraphicsView(QGraphicsView):
 
         super().keyPressEvent(event)
 
+    def mousePressEvent(self, event):
+
+        if self.fog_mode == "sizing" and self.fog_item is not None:
+
+            self._sizing_start = self.mapToScene(event.pos())
+
+            self._sizing_preview = QGraphicsRectItem()
+            self._sizing_preview.setPen(QPen(QColor("#d4af37"), 2, Qt.DashLine))
+            self._sizing_preview.setZValue(1000)
+            self.scene().addItem(self._sizing_preview)
+
+            event.accept()
+            return
+
+        if self.fog_mode == "explore" and self.fog_item is not None:
+
+            local_pos = self.fog_item.mapFromScene(self.mapToScene(event.pos()))
+            tile = self.fog_item.tile_at(local_pos)
+
+            if tile is not None and self.fog_reveal_callback:
+                self.fog_reveal_callback(tile)
+
+            event.accept()
+            return
+
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+
+        if self.fog_mode == "sizing" and self._sizing_start is not None:
+
+            current = self.mapToScene(event.pos())
+            rect = QRectF(self._sizing_start, current).normalized()
+
+            if self._sizing_preview is not None:
+                self._sizing_preview.setRect(rect)
+
+            event.accept()
+            return
+
+        if self.fog_mode == "explore" and self.fog_item is not None:
+
+            local_pos = self.fog_item.mapFromScene(self.mapToScene(event.pos()))
+            tile = self.fog_item.tile_at(local_pos)
+
+            if tile != self.fog_item.hover_tile:
+                self.fog_item.hover_tile = tile
+                self.fog_item.update()
+
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+
+        if self.fog_mode == "sizing" and self._sizing_start is not None:
+
+            current = self.mapToScene(event.pos())
+            rect = QRectF(self._sizing_start, current).normalized()
+
+            if self._sizing_preview is not None:
+                self.scene().removeItem(self._sizing_preview)
+                self._sizing_preview = None
+
+            self._sizing_start = None
+            self.fog_mode = None
+
+            if rect.width() >= 5 and rect.height() >= 5 and self.fog_size_callback:
+                self.fog_size_callback(rect.width(), rect.height())
+
+            event.accept()
+            return
+
+        super().mouseReleaseEvent(event)
+
 
 class PlayerDisplayPage(QWidget):
 
@@ -267,6 +359,7 @@ class PlayerDisplayPage(QWidget):
         self.scene = DisplayScene()
         self.backdrop_item = None
         self.background_item = None
+        self.fog_item = None
         self.selected_item = None
         self.tv_window = None
 
@@ -287,6 +380,10 @@ class PlayerDisplayPage(QWidget):
         self.backdrop_button = QPushButton("Choose Background")
         self.backdrop_button.clicked.connect(self.choose_backdrop)
         top_bar.addWidget(self.backdrop_button)
+
+        self.random_encounter_button = QPushButton("Random Encounter")
+        self.random_encounter_button.clicked.connect(self.add_random_encounter)
+        top_bar.addWidget(self.random_encounter_button)
 
         self.tv_button = PrimaryButton("TV Display")
         self.tv_button.clicked.connect(self.open_tv_display)
@@ -336,6 +433,62 @@ class PlayerDisplayPage(QWidget):
         widgets_tab_layout.addWidget(widgets_scroll)
 
         self.tabs.addTab(widgets_tab, "Widgets")
+
+        fog_tab = QWidget()
+        fog_tab_layout = QVBoxLayout(fog_tab)
+
+        self.fog_hide_all_button = QPushButton("Hide All")
+        self.fog_hide_all_button.clicked.connect(self.fog_hide_all)
+        fog_tab_layout.addWidget(self.fog_hide_all_button)
+
+        self.fog_clear_button = QPushButton("Clear Fog")
+        self.fog_clear_button.clicked.connect(self.fog_clear)
+        fog_tab_layout.addWidget(self.fog_clear_button)
+
+        self.fog_set_grid_button = QPushButton("Set Grid Size")
+        self.fog_set_grid_button.clicked.connect(self.fog_start_set_grid)
+        fog_tab_layout.addWidget(self.fog_set_grid_button)
+
+        self.fog_explore_button = QPushButton("Explore")
+        self.fog_explore_button.setCheckable(True)
+        self.fog_explore_button.toggled.connect(self.fog_toggle_explore)
+        fog_tab_layout.addWidget(self.fog_explore_button)
+
+        fog_form = QFormLayout()
+
+        self.fog_size_spinbox = QDoubleSpinBox()
+        self.fog_size_spinbox.setRange(5, 2000)
+        self.fog_size_spinbox.setSingleStep(5)
+        self.fog_size_spinbox.setValue(100)
+        self.fog_size_spinbox.valueChanged.connect(self.fog_size_changed)
+        fog_form.addRow("Tile Size", self.fog_size_spinbox)
+
+        self.fog_offset_x_spinbox = QDoubleSpinBox()
+        self.fog_offset_x_spinbox.setRange(-1000, 1000)
+        self.fog_offset_x_spinbox.setSingleStep(1)
+        self.fog_offset_x_spinbox.valueChanged.connect(self.fog_offset_changed)
+        fog_form.addRow("Offset X", self.fog_offset_x_spinbox)
+
+        self.fog_offset_y_spinbox = QDoubleSpinBox()
+        self.fog_offset_y_spinbox.setRange(-1000, 1000)
+        self.fog_offset_y_spinbox.setSingleStep(1)
+        self.fog_offset_y_spinbox.valueChanged.connect(self.fog_offset_changed)
+        fog_form.addRow("Offset Y", self.fog_offset_y_spinbox)
+
+        fog_tab_layout.addLayout(fog_form)
+
+        fog_hint = QLabel(
+            "Set Grid Size: drag a box on the map to size one tile,\n"
+            "or dial in the exact size and nudge the grid below.\n"
+            "Explore: click tiles to reveal them to players."
+        )
+        fog_hint.setWordWrap(True)
+        fog_hint.setStyleSheet("color:#999;")
+        fog_tab_layout.addWidget(fog_hint)
+
+        fog_tab_layout.addStretch()
+
+        self.tabs.addTab(fog_tab, "FOG")
 
         left.addWidget(self.tabs)
 
@@ -419,10 +572,16 @@ class PlayerDisplayPage(QWidget):
         self.scene.clear()
         self.backdrop_item = None
         self.background_item = None
+        self.fog_item = None
         self.selected_item = None
         self.visible_checkbox.setEnabled(False)
         self.lock_checkbox.setEnabled(False)
         self.remove_button.setEnabled(False)
+
+        self.view.fog_item = None
+        self.view.fog_mode = None
+        self.view.fog_reveal_callback = None
+        self.view.fog_size_callback = None
 
         self.redraw_backdrop()
         self.redraw_background()
@@ -438,6 +597,7 @@ class PlayerDisplayPage(QWidget):
 
         self.refresh_maps_list()
         self.refresh_widgets_list()
+        self.refresh_fog_tab()
 
     def refresh_maps_list(self):
 
@@ -448,7 +608,7 @@ class PlayerDisplayPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        for map_obj in MapManager.load_maps():
+        for map_obj in SessionState.scene_maps():
             self.maps_container.addWidget(DisplayMapCard(map_obj, self.select_map))
 
         self.maps_container.addStretch()
@@ -544,15 +704,31 @@ class PlayerDisplayPage(QWidget):
         # a new map steps into the same slot as the last one, so switching maps
         # mid-session doesn't require re-adjusting it every time.
         self.display.background_map = map_obj.path
+
+        # Fog is defined in this map's own pixel space, so it can't carry over
+        # to a different map - a freshly-selected map starts unexplored.
+        self.display.fog_enabled = False
+        self.display.fog_grid_width = 0
+        self.display.fog_grid_height = 0
+        self.display.fog_offset_x = 0
+        self.display.fog_offset_y = 0
+        self.display.fog_revealed = []
+
         PlayerDisplayManager.save_display(self.display)
 
         self.redraw_background()
+        self.refresh_fog_tab()
 
     def redraw_background(self):
 
         if self.background_item is not None:
             self.scene.removeItem(self.background_item)
             self.background_item = None
+
+        if self.fog_item is not None:
+            self.scene.removeItem(self.fog_item)
+            self.fog_item = None
+            self.view.fog_item = None
 
         if self.display.background_map and Path(self.display.background_map).exists():
 
@@ -573,6 +749,19 @@ class PlayerDisplayPage(QWidget):
             self.scene.addItem(item)
             self.background_item = item
 
+            fog_item = FogOverlayItem()
+            fog_item.sync_to(item)
+            fog_item.fog_enabled = self.display.fog_enabled
+            fog_item.grid_width = self.display.fog_grid_width
+            fog_item.grid_height = self.display.fog_grid_height
+            fog_item.offset_x = self.display.fog_offset_x
+            fog_item.offset_y = self.display.fog_offset_y
+            fog_item.revealed = {tuple(pair) for pair in self.display.fog_revealed}
+
+            self.scene.addItem(fog_item)
+            self.fog_item = fog_item
+            self.view.fog_item = fog_item
+
     def save_background_geometry(self, item):
 
         geometry = item.geometry_dict()
@@ -585,6 +774,153 @@ class PlayerDisplayPage(QWidget):
 
         PlayerDisplayManager.save_display(self.display)
 
+        if self.fog_item is not None:
+            self.fog_item.sync_to(item)
+
+    #
+    # Fog of War
+    #
+
+    def refresh_fog_tab(self):
+
+        has_map = bool(self.display.background_map)
+
+        self.fog_hide_all_button.setEnabled(has_map)
+        self.fog_clear_button.setEnabled(has_map)
+        self.fog_set_grid_button.setEnabled(has_map)
+        self.fog_size_spinbox.setEnabled(has_map)
+        self.fog_offset_x_spinbox.setEnabled(has_map)
+        self.fog_offset_y_spinbox.setEnabled(has_map)
+
+        self.fog_explore_button.blockSignals(True)
+        self.fog_explore_button.setChecked(False)
+        self.fog_explore_button.blockSignals(False)
+        self.fog_explore_button.setEnabled(has_map)
+
+        self.view.fog_mode = None
+        self.view.fog_reveal_callback = None
+        self.view.fog_size_callback = None
+
+        self.sync_fog_controls()
+
+    def sync_fog_controls(self):
+
+        self.fog_size_spinbox.blockSignals(True)
+        self.fog_size_spinbox.setValue(self.display.fog_grid_width or 100)
+        self.fog_size_spinbox.blockSignals(False)
+
+        self.fog_offset_x_spinbox.blockSignals(True)
+        self.fog_offset_x_spinbox.setValue(self.display.fog_offset_x)
+        self.fog_offset_x_spinbox.blockSignals(False)
+
+        self.fog_offset_y_spinbox.blockSignals(True)
+        self.fog_offset_y_spinbox.setValue(self.display.fog_offset_y)
+        self.fog_offset_y_spinbox.blockSignals(False)
+
+    def fog_hide_all(self):
+
+        if not self.display.background_map or self.fog_item is None:
+            return
+
+        self.display.fog_enabled = True
+        self.display.fog_revealed = []
+        PlayerDisplayManager.save_display(self.display)
+
+        self.fog_item.fog_enabled = True
+        self.fog_item.revealed = set()
+        self.fog_item.update()
+
+    def fog_clear(self):
+
+        if not self.display.background_map or self.fog_item is None:
+            return
+
+        self.display.fog_enabled = False
+        PlayerDisplayManager.save_display(self.display)
+
+        self.fog_item.fog_enabled = False
+        self.fog_item.update()
+
+    def fog_start_set_grid(self):
+
+        if not self.display.background_map or self.fog_item is None:
+            return
+
+        self.fog_explore_button.setChecked(False)
+
+        self.view.fog_mode = "sizing"
+        self.view.fog_size_callback = self.fog_set_grid_size
+
+    def fog_set_grid_size(self, width, height):
+
+        self.display.fog_grid_width = width
+        self.display.fog_grid_height = height
+        self.display.fog_offset_x = 0
+        self.display.fog_offset_y = 0
+        PlayerDisplayManager.save_display(self.display)
+
+        if self.fog_item is not None:
+            self.fog_item.grid_width = width
+            self.fog_item.grid_height = height
+            self.fog_item.offset_x = 0
+            self.fog_item.offset_y = 0
+            self.fog_item.update()
+
+        self.sync_fog_controls()
+
+    def fog_size_changed(self, value):
+
+        if not self.display.background_map or self.fog_item is None:
+            return
+
+        self.display.fog_grid_width = value
+        self.display.fog_grid_height = value
+        PlayerDisplayManager.save_display(self.display)
+
+        self.fog_item.grid_width = value
+        self.fog_item.grid_height = value
+        self.fog_item.update()
+
+    def fog_offset_changed(self, _value):
+
+        if not self.display.background_map or self.fog_item is None:
+            return
+
+        self.display.fog_offset_x = self.fog_offset_x_spinbox.value()
+        self.display.fog_offset_y = self.fog_offset_y_spinbox.value()
+        PlayerDisplayManager.save_display(self.display)
+
+        self.fog_item.offset_x = self.display.fog_offset_x
+        self.fog_item.offset_y = self.display.fog_offset_y
+        self.fog_item.update()
+
+    def fog_toggle_explore(self, checked):
+
+        if checked and (not self.display.background_map or self.fog_item is None):
+            self.fog_explore_button.blockSignals(True)
+            self.fog_explore_button.setChecked(False)
+            self.fog_explore_button.blockSignals(False)
+            return
+
+        self.view.fog_mode = "explore" if checked else None
+        self.view.fog_reveal_callback = self.fog_reveal_tile if checked else None
+
+        if self.fog_item is not None:
+            self.fog_item.hover_tile = None
+            self.fog_item.update()
+
+    def fog_reveal_tile(self, tile):
+
+        tile_key = list(tile)
+
+        if tile_key not in self.display.fog_revealed:
+            self.display.fog_revealed.append(tile_key)
+            PlayerDisplayManager.save_display(self.display)
+
+        if self.fog_item is not None:
+            self.fog_item.revealed.add(tile)
+            self.fog_item.update()
+
     #
     # Tokens
     #
@@ -595,15 +931,28 @@ class PlayerDisplayPage(QWidget):
 
         return (max(existing) + 1) if existing else 1
 
+    def last_size_for_type(self, widget_type, fallback_width, fallback_height):
+
+        matches = [w for w in self.display.widgets if w.get("type") == widget_type]
+
+        if not matches:
+            return fallback_width, fallback_height
+
+        last = matches[-1]
+
+        return last.get("width", fallback_width), last.get("height", fallback_height)
+
     def add_token_from_library(self, token):
+
+        width, height = self.last_size_for_type("token", 150, 150)
 
         widget_dict = {
             "widget_id": self.next_widget_id(),
             "type": "token",
             "x": 100,
             "y": 100,
-            "width": 150,
-            "height": 150,
+            "width": width,
+            "height": height,
             "rotation": 0,
             "visible": True,
             "locked": False,
@@ -656,13 +1005,15 @@ class PlayerDisplayPage(QWidget):
 
     def add_hero(self, hero):
 
+        width, height = self.last_size_for_type("hero", 160, 200)
+
         widget_dict = {
             "widget_id": self.next_widget_id(),
             "type": "hero",
             "x": 100,
             "y": 100,
-            "width": 160,
-            "height": 200,
+            "width": width,
+            "height": height,
             "rotation": 0,
             "visible": True,
             "locked": False,
@@ -691,6 +1042,22 @@ class PlayerDisplayPage(QWidget):
         item.geometryChanged.connect(lambda: self.save_item_geometry(item))
 
         self.scene.addItem(item)
+
+    #
+    # Random encounter monsters
+    #
+
+    def add_random_encounter(self):
+
+        instance = SessionState.add_random_encounter()
+
+        if instance is None:
+            QMessageBox.information(
+                self,
+                "No Random Encounters in Session",
+                "Tick 'Random Encounter' on a monster in the session pool "
+                "(Session tab) first."
+            )
 
     #
     # Initiative tracker
@@ -817,10 +1184,23 @@ class PlayerDisplayPage(QWidget):
         if isinstance(self.selected_item, MapBackgroundItem):
 
             self.display.background_map = ""
+            self.display.fog_enabled = False
+            self.display.fog_grid_width = 0
+            self.display.fog_grid_height = 0
+            self.display.fog_offset_x = 0
+            self.display.fog_offset_y = 0
+            self.display.fog_revealed = []
             PlayerDisplayManager.save_display(self.display)
 
             self.scene.removeItem(self.selected_item)
             self.background_item = None
+
+            if self.fog_item is not None:
+                self.scene.removeItem(self.fog_item)
+                self.fog_item = None
+                self.view.fog_item = None
+
+            self.refresh_fog_tab()
 
         else:
 

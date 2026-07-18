@@ -18,6 +18,13 @@ class PlayerDisplay:
 
     widgets: list = field(default_factory=list)
 
+    fog_enabled: bool = False
+    fog_grid_width: float = 0
+    fog_grid_height: float = 0
+    fog_offset_x: float = 0
+    fog_offset_y: float = 0
+    fog_revealed: list = field(default_factory=list)
+
     def save(self, file):
 
         file = Path(file)
@@ -42,6 +49,8 @@ class PlayerDisplay:
             "background_map", "background_x", "background_y",
             "background_width", "background_height", "background_rotation",
             "background_locked", "widgets",
+            "fog_enabled", "fog_grid_width", "fog_grid_height",
+            "fog_offset_x", "fog_offset_y", "fog_revealed",
         }
         data = {k: v for k, v in data.items() if k in known}
 

@@ -237,6 +237,19 @@ class SessionState:
         if instance:
             instance.hp = min(instance.max_hp, instance.hp + amount)
 
+    @classmethod
+    def set_instance_condition(cls, instance_id, condition, value):
+
+        instance = cls._find_instance(instance_id)
+
+        if instance is None:
+            return
+
+        if value and condition not in instance.conditions:
+            instance.conditions.append(condition)
+        elif not value and condition in instance.conditions:
+            instance.conditions.remove(condition)
+
     #
     # Initiative
     #

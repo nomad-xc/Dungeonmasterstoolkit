@@ -3,7 +3,7 @@
     "hero_class": "rogue",
     "race": "",
     "level": 1,
-    "hp": 8,
+    "hp": 2,
     "max_hp": 10,
     "mp": 4,
     "max_mp": 5,
@@ -17,6 +17,8 @@
     "xp": 0,
     "portrait": "campaigns/test 1/Images/nomad.png",
     "notes": "",
-    "conditions": [],
+    "conditions": [
+        "Poisoned"
+    ],
     "is_dm": false
 }

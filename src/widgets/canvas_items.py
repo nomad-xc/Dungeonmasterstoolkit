@@ -1,7 +1,7 @@
 import math
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QRectF, Signal
+from PySide6.QtCore import Qt, QRectF, QPointF, Signal
 from PySide6.QtGui import QColor, QPen, QPixmap, QPainterPath, QFont, QPainter
 from PySide6.QtWidgets import QGraphicsObject, QGraphicsScene
 
@@ -223,6 +223,156 @@ class MapBackgroundItem(ResizableRotatableItem):
             painter.fillRect(rect, QColor("#333"))
 
 
+FOG_DM_COLOR = QColor(40, 40, 40, 170)
+FOG_TV_COLOR = QColor(0, 0, 0, 255)
+FOG_GRID_LINE_COLOR = QColor(255, 255, 255, 90)
+FOG_HOVER_COLOR = QColor(212, 175, 55, 110)
+
+
+class FogOverlayItem(QGraphicsObject):
+
+    # Always kept pixel-aligned with a MapBackgroundItem via sync_to() - not a
+    # ResizableRotatableItem itself, it has no handles of its own and is purely
+    # a rendering + hit-testing layer driven by the view's fog interaction modes.
+
+    def __init__(self):
+        super().__init__()
+
+        self._width = 0
+        self._height = 0
+
+        self.fog_enabled = False
+        self.grid_width = 0
+        self.grid_height = 0
+        self.offset_x = 0
+        self.offset_y = 0
+        self.revealed = set()
+        self.hover_tile = None
+
+        self.setZValue(-999)
+        self.setAcceptedMouseButtons(Qt.NoButton)
+        self.setAcceptHoverEvents(False)
+
+    def sync_to(self, background_item):
+
+        self.prepareGeometryChange()
+
+        self.setPos(background_item.pos())
+        self.setRotation(background_item.rotation())
+
+        self._width = background_item.width()
+        self._height = background_item.height()
+        self.setTransformOriginPoint(self._width / 2, self._height / 2)
+
+        self.update()
+
+    def tile_size(self):
+
+        width = self.grid_width if self.grid_width > 0 else self._width
+        height = self.grid_height if self.grid_height > 0 else self._height
+
+        return max(width, 1), max(height, 1)
+
+    def tile_origin(self):
+
+        tile_w, tile_h = self.tile_size()
+
+        return self.offset_x % tile_w, self.offset_y % tile_h
+
+    def tile_range(self):
+
+        # col/row 0 sits at (x0, y0); a positive offset can leave a partial
+        # leading tile before that, hence the -1 start when x0/y0 > 0.
+
+        tile_w, tile_h = self.tile_size()
+        x0, y0 = self.tile_origin()
+
+        col_start = -1 if x0 > 0 else 0
+        row_start = -1 if y0 > 0 else 0
+
+        col_end = max(col_start, math.ceil((self._width - x0) / tile_w) - 1)
+        row_end = max(row_start, math.ceil((self._height - y0) / tile_h) - 1)
+
+        return col_start, col_end, row_start, row_end
+
+    def tile_rect(self, col, row):
+
+        tile_w, tile_h = self.tile_size()
+        x0, y0 = self.tile_origin()
+
+        rect = QRectF(x0 + col * tile_w, y0 + row * tile_h, tile_w, tile_h)
+
+        return rect.intersected(QRectF(0, 0, self._width, self._height))
+
+    def tile_at(self, local_pos):
+
+        if not (0 <= local_pos.x() <= self._width and 0 <= local_pos.y() <= self._height):
+            return None
+
+        tile_w, tile_h = self.tile_size()
+        x0, y0 = self.tile_origin()
+
+        col = math.floor((local_pos.x() - x0) / tile_w)
+        row = math.floor((local_pos.y() - y0) / tile_h)
+
+        return (col, row)
+
+    def boundingRect(self):
+        return QRectF(0, 0, self._width, self._height)
+
+    def paint(self, painter, option, widget=None):
+
+        if not self.fog_enabled or self._width <= 0 or self._height <= 0:
+            return
+
+        is_tv_view = self.scene() is not None and widget is self.scene().tv_viewport
+
+        tile_w, tile_h = self.tile_size()
+        x0, y0 = self.tile_origin()
+        col_start, col_end, row_start, row_end = self.tile_range()
+
+        painter.setPen(Qt.NoPen)
+
+        for row in range(row_start, row_end + 1):
+            for col in range(col_start, col_end + 1):
+
+                if (col, row) in self.revealed:
+                    continue
+
+                tile_rect = self.tile_rect(col, row)
+
+                if tile_rect.isEmpty():
+                    continue
+
+                painter.setBrush(FOG_TV_COLOR if is_tv_view else FOG_DM_COLOR)
+                painter.drawRect(tile_rect)
+
+        if is_tv_view:
+            return
+
+        painter.setPen(QPen(FOG_GRID_LINE_COLOR, 1))
+        painter.setBrush(Qt.NoBrush)
+
+        for col in range(col_start, col_end + 2):
+            x = x0 + col * tile_w
+            if 0 < x < self._width:
+                painter.drawLine(QPointF(x, 0), QPointF(x, self._height))
+
+        for row in range(row_start, row_end + 2):
+            y = y0 + row * tile_h
+            if 0 < y < self._height:
+                painter.drawLine(QPointF(0, y), QPointF(self._width, y))
+
+        if self.hover_tile is not None:
+
+            hover_rect = self.tile_rect(*self.hover_tile)
+
+            if not hover_rect.isEmpty():
+                painter.setPen(QPen(QColor("#d4af37"), 2))
+                painter.setBrush(FOG_HOVER_COLOR)
+                painter.drawRect(hover_rect)
+
+
 RING_WIDTH = 10
 RING_TRACK_COLOR = QColor(255, 255, 255, 60)
 MP_COLOR = QColor("#3b82f6")
@@ -365,6 +515,8 @@ class InitiativeTrackerItem(ResizableRotatableItem):
         font.setBold(True)
         painter.setFont(font)
 
+        heroes_by_name = {hero.name: hero for hero in HeroManager.load_heroes()}
+
         x = 0.0
 
         for entry in order:
@@ -382,6 +534,32 @@ class InitiativeTrackerItem(ResizableRotatableItem):
 
             painter.setPen(QPen(QColor("white")))
             painter.drawText(pill_rect, Qt.AlignCenter, f"{label}\n({roll})")
+
+            hero = heroes_by_name.get(entry["name"]) if entry["kind"] == "hero" else None
+
+            if hero and hero.conditions:
+
+                badge_size = 16
+                badge_rect = QRectF(
+                    pill_rect.right() - badge_size - 4,
+                    pill_rect.top() + 4,
+                    badge_size, badge_size
+                )
+
+                painter.save()
+
+                painter.setBrush(QColor("#8b1a1a"))
+                painter.setPen(QPen(QColor("#d4af37"), 1.5))
+                painter.drawEllipse(badge_rect)
+
+                badge_font = QFont()
+                badge_font.setBold(True)
+                badge_font.setPointSize(8)
+                painter.setFont(badge_font)
+                painter.setPen(QPen(QColor("white")))
+                painter.drawText(badge_rect, Qt.AlignCenter, "!")
+
+                painter.restore()
 
             x += PILL_WIDTH + PILL_SPACING
 

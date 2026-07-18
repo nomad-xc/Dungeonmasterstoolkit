@@ -103,6 +103,7 @@ class HeroOverviewCard(QFrame):
         super().__init__()
 
         self.hero = hero
+        self.active = active
         self.changed_callback = changed_callback
 
         self.setFrameShape(QFrame.StyledPanel)
@@ -267,7 +268,23 @@ class HeroOverviewCard(QFrame):
 
             conditions_grid.addWidget(button, index // 4, index % 4)
 
-        layout.addLayout(conditions_grid)
+        self.conditions_widget = QWidget()
+        self.conditions_widget.setLayout(conditions_grid)
+        layout.addWidget(self.conditions_widget)
+
+        # Weapon and conditions stay hidden unless it's this hero's turn -
+        # click anywhere on the card to peek at them regardless.
+        self.detail_widgets = [self.weapon_label, self.conditions_widget]
+
+        for widget in self.detail_widgets:
+            widget.setVisible(active)
+
+    def mousePressEvent(self, event):
+
+        for widget in self.detail_widgets:
+            widget.setVisible(widget.isHidden())
+
+        super().mousePressEvent(event)
 
     def update_display(self):
 
@@ -392,27 +409,53 @@ class MonsterInstanceCard(QFrame):
         stats_row.addWidget(QLabel(f"Speed: {instance.speed}"))
         layout.addLayout(stats_row)
 
-        self.detail_labels = []
+        self.detail_widgets = []
 
         if instance.behavior:
 
             behavior_label = QLabel(f"Behavior: {instance.behavior}")
             behavior_label.setWordWrap(True)
             behavior_label.setStyleSheet("color:#bbb; font-style:italic;")
-            behavior_label.setVisible(False)
+            behavior_label.setVisible(active)
             layout.addWidget(behavior_label)
 
-            self.detail_labels.append(behavior_label)
+            self.detail_widgets.append(behavior_label)
 
         if instance.abilities:
 
             abilities_label = QLabel(f"Abilities: {instance.abilities}")
             abilities_label.setWordWrap(True)
             abilities_label.setStyleSheet("color:#bbb; font-style:italic;")
-            abilities_label.setVisible(False)
+            abilities_label.setVisible(active)
             layout.addWidget(abilities_label)
 
-            self.detail_labels.append(abilities_label)
+            self.detail_widgets.append(abilities_label)
+
+        #
+        # Conditions
+        #
+
+        conditions_grid = QGridLayout()
+        self.condition_buttons = {}
+
+        for index, condition in enumerate(Hero.CONDITIONS):
+
+            button = QPushButton(condition)
+            button.setCheckable(True)
+            button.setChecked(condition in instance.conditions)
+            button.setStyleSheet(condition_button_style())
+            button.toggled.connect(self.toggle_condition_handler(condition))
+
+            self.condition_buttons[condition] = button
+
+            conditions_grid.addWidget(button, index // 4, index % 4)
+
+        self.conditions_widget = QWidget()
+        self.conditions_widget.setLayout(conditions_grid)
+        self.conditions_widget.setVisible(active)
+        layout.addWidget(self.conditions_widget)
+
+        self.detail_widgets.append(self.conditions_widget)
 
         if instance.is_defeated:
             defeated_label = QLabel("DEFEATED")
@@ -427,10 +470,19 @@ class MonsterInstanceCard(QFrame):
 
     def mousePressEvent(self, event):
 
-        for label in self.detail_labels:
-            label.setVisible(label.isHidden())
+        for widget in self.detail_widgets:
+            widget.setVisible(widget.isHidden())
 
         super().mousePressEvent(event)
+
+    def toggle_condition_handler(self, condition):
+
+        def handler(checked):
+
+            SessionState.set_instance_condition(self.instance.instance_id, condition, checked)
+            self.changed_callback()
+
+        return handler
 
     def adjust_hp(self, delta):
 
@@ -492,7 +544,7 @@ class GameplayPage(QWidget):
 
         turn_order_scroll = QScrollArea()
         turn_order_scroll.setWidgetResizable(True)
-        turn_order_scroll.setFixedHeight(70)
+        turn_order_scroll.setFixedHeight(96)
         turn_order_scroll.setWidget(turn_order_widget)
 
         root.addWidget(turn_order_scroll)
@@ -573,8 +625,64 @@ class GameplayPage(QWidget):
 
     def next_turn(self):
 
+        current = SessionState.current_turn()
+
+        if current is not None:
+            self.confirm_condition_expiry(current)
+
         SessionState.next_turn(self.active_heroes())
         self.refresh()
+
+    def confirm_condition_expiry(self, entry):
+
+        if entry["kind"] == "hero":
+
+            hero = next((h for h in self.active_heroes() if h.name == entry["name"]), None)
+
+            if hero is None or not hero.conditions:
+                return
+
+            changed = False
+
+            for condition in list(hero.conditions):
+
+                answer = QMessageBox.question(
+                    self,
+                    "Condition Check",
+                    f"Has '{condition}' ended for {hero.name}?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+
+                if answer == QMessageBox.Yes:
+                    hero.conditions.remove(condition)
+                    changed = True
+
+            if changed:
+                HeroManager.save_hero(hero)
+
+        else:
+
+            instance = next(
+                (i for i in SessionState.encounter() if i.instance_id == entry["instance_id"]),
+                None
+            )
+
+            if instance is None or not instance.conditions:
+                return
+
+            for condition in list(instance.conditions):
+
+                answer = QMessageBox.question(
+                    self,
+                    "Condition Check",
+                    f"Has '{condition}' ended for {instance.label}?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+
+                if answer == QMessageBox.Yes:
+                    SessionState.set_instance_condition(instance.instance_id, condition, False)
 
     def add_random_encounter(self):
 
@@ -622,6 +730,17 @@ class GameplayPage(QWidget):
             SessionState.add_specific_encounter(entry.pool_id)
 
         self.refresh()
+
+    def show_conditions_handler(self, hero_name, conditions):
+
+        def handler():
+            QMessageBox.information(
+                self,
+                f"{hero_name} — Conditions",
+                ", ".join(conditions)
+            )
+
+        return handler
 
     def refresh(self):
 
@@ -693,11 +812,38 @@ class GameplayPage(QWidget):
 
         self.encounter_container.addStretch()
 
+        heroes_by_name = {hero.name: hero for hero in self.active_heroes()}
+
         for entry in order:
 
             is_current = entry is current
 
             label_text = entry["name"] if entry["kind"] == "hero" else entry["label"]
+
+            pill_column = QVBoxLayout()
+            pill_column.setSpacing(2)
+
+            hero = heroes_by_name.get(entry["name"]) if entry["kind"] == "hero" else None
+
+            if hero and hero.conditions:
+
+                condition_button = QPushButton("!")
+                condition_button.setFixedSize(22, 22)
+                condition_button.setToolTip(", ".join(hero.conditions))
+                condition_button.setStyleSheet("""
+                    QPushButton {
+                        background:#8b1a1a;
+                        color:white;
+                        border:2px solid #d4af37;
+                        border-radius:11px;
+                        font-weight:bold;
+                    }
+                """)
+                condition_button.clicked.connect(
+                    self.show_conditions_handler(hero.name, hero.conditions)
+                )
+
+                pill_column.addWidget(condition_button, alignment=Qt.AlignHCenter)
 
             pill = QLabel(f"{label_text}\n({entry['roll']})")
             pill.setAlignment(Qt.AlignCenter)
@@ -711,7 +857,12 @@ class GameplayPage(QWidget):
                 padding:6px;
             """)
 
-            self.turn_order_container.addWidget(pill)
+            pill_column.addWidget(pill)
+
+            pill_column_widget = QWidget()
+            pill_column_widget.setLayout(pill_column)
+
+            self.turn_order_container.addWidget(pill_column_widget)
 
         self.turn_order_container.addStretch()
 
