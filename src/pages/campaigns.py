@@ -1,4 +1,5 @@
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -11,6 +12,10 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QFileDialog,
 )
+
+
+LOGO_SIZE = 180
+LOGO_PATH = "assets/icon.png"
 
 from src.widgets.primary_button import PrimaryButton
 from src.database.campaign_manager import CampaignManager
@@ -27,7 +32,22 @@ class CampaignPage(QWidget):
 
         layout = QVBoxLayout(self)
 
+        logo_label = QLabel()
+        logo_label.setAlignment(Qt.AlignCenter)
+
+        logo_pixmap = QPixmap(LOGO_PATH)
+        if not logo_pixmap.isNull():
+            logo_label.setPixmap(logo_pixmap.scaled(
+                LOGO_SIZE,
+                LOGO_SIZE,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            ))
+
+        layout.addWidget(logo_label)
+
         title = QLabel("Campaign Manager")
+        title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("""
             font-size:28px;
             font-weight:bold;
