@@ -15,6 +15,9 @@ class PlayerDisplay:
     background_height: float = 0
     background_rotation: float = 0
     background_locked: bool = False
+    background_aspect_locked: bool = False
+    background_ratio_x: float = 4
+    background_ratio_y: float = 3
 
     widgets: list = field(default_factory=list)
 
@@ -48,7 +51,8 @@ class PlayerDisplay:
             "backdrop_image",
             "background_map", "background_x", "background_y",
             "background_width", "background_height", "background_rotation",
-            "background_locked", "widgets",
+            "background_locked", "background_aspect_locked",
+            "background_ratio_x", "background_ratio_y", "widgets",
             "fog_enabled", "fog_grid_width", "fog_grid_height",
             "fog_offset_x", "fog_offset_y", "fog_revealed",
         }

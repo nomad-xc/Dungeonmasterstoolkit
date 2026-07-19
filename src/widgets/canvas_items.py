@@ -2,7 +2,7 @@ import math
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF, QPointF, Signal
-from PySide6.QtGui import QColor, QPen, QPixmap, QPainterPath, QFont, QPainter
+from PySide6.QtGui import QColor, QPen, QPixmap, QPainterPath, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QGraphicsObject, QGraphicsScene
 
 from src.managers.hero_manager import HeroManager
@@ -15,7 +15,7 @@ ROTATE_HANDLE_OFFSET = 24
 MIN_SIZE = 20
 
 SCENE_WIDTH = 1600
-SCENE_HEIGHT = 1200
+SCENE_HEIGHT = 900
 
 
 class DisplayScene(QGraphicsScene):
@@ -42,6 +42,7 @@ class ResizableRotatableItem(QGraphicsObject):
 
         self._active_handle = None
         self.locked = False
+        self.locked_aspect_ratio = None
 
         self.setPos(x, y)
         self.setRotation(rotation)
@@ -55,6 +56,16 @@ class ResizableRotatableItem(QGraphicsObject):
 
         self.locked = locked
         self.setFlag(QGraphicsObject.ItemIsMovable, not locked)
+        self.update()
+
+    def snap_to_aspect_ratio(self, ratio):
+
+        self.prepareGeometryChange()
+
+        self._height = max(MIN_SIZE, self._width / ratio)
+        self.setTransformOriginPoint(self._width / 2, self._height / 2)
+
+        self.locked_aspect_ratio = ratio
         self.update()
 
     def width(self):
@@ -129,6 +140,11 @@ class ResizableRotatableItem(QGraphicsObject):
             for name, rect in self.handles().items():
                 if rect.contains(pos):
                     self._active_handle = name
+                    # Without an explicit grab, dragging the mouse outside the
+                    # view (easy to do when rotating something near the edge
+                    # of the screen) can lose the release event entirely,
+                    # leaving the gesture never finalized/saved.
+                    self.grabMouse()
                     event.accept()
                     return
 
@@ -144,7 +160,12 @@ class ResizableRotatableItem(QGraphicsObject):
 
             self.prepareGeometryChange()
             self._width = max(MIN_SIZE, local.x())
-            self._height = max(MIN_SIZE, local.y())
+
+            if self.locked_aspect_ratio:
+                self._height = max(MIN_SIZE, self._width / self.locked_aspect_ratio)
+            else:
+                self._height = max(MIN_SIZE, local.y())
+
             self.setTransformOriginPoint(self._width / 2, self._height / 2)
             self.update()
 
@@ -160,6 +181,9 @@ class ResizableRotatableItem(QGraphicsObject):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+
+        if self._active_handle is not None:
+            self.ungrabMouse()
 
         self._active_handle = None
 
@@ -460,11 +484,23 @@ class HeroRingItem(ResizableRotatableItem):
 
 
 PILL_WIDTH = 100
-PILL_HEIGHT = 60
+PILL_HEIGHT = 28
 PILL_SPACING = 8
 
+# Each pill is sized to fit its own text, not a fixed box - these are just
+# the breathing room kept around that text (tight, since this is meant to
+# still read clearly from across a room on a big TV).
+PILL_H_PADDING = 32
+PILL_V_PADDING = 6
+PILL_MIN_WIDTH = 46
+PILL_MIN_HEIGHT = 26
 
-class InitiativeTrackerItem(ResizableRotatableItem):
+
+class BaseInitiativeTrackerItem(ResizableRotatableItem):
+
+    # None shows the whole turn order; otherwise shows at most this many
+    # entries, starting from whoever's turn it currently is.
+    max_entries = None
 
     def __init__(self, widget_id, x, y, rotation=0, visible_to_players=True):
         super().__init__(widget_id, x, y, PILL_WIDTH, PILL_HEIGHT, rotation)
@@ -477,6 +513,16 @@ class InitiativeTrackerItem(ResizableRotatableItem):
 
         return {"rotate": all_handles["rotate"]}
 
+    def visible_entries(self, order, current):
+
+        if self.max_entries is None or not order:
+            return order
+
+        start = next((i for i, entry in enumerate(order) if entry is current), 0)
+        count = min(self.max_entries, len(order))
+
+        return [order[(start + i) % len(order)] for i in range(count)]
+
     def paint_content(self, painter, option, widget=None):
 
         is_tv_view = self.scene() is not None and widget is self.scene().tv_viewport
@@ -484,12 +530,66 @@ class InitiativeTrackerItem(ResizableRotatableItem):
         if is_tv_view and not self.visible_to_players:
             return
 
-        order = SessionState.initiative_order()
+        order = self.visible_entries(SessionState.initiative_order(), SessionState.current_turn())
         current = SessionState.current_turn()
 
-        count = max(1, len(order))
-        new_width = count * PILL_WIDTH + (count - 1) * PILL_SPACING
-        new_height = PILL_HEIGHT
+        font = QFont()
+        font.setBold(True)
+        painter.setFont(font)
+
+        if not order:
+
+            new_width = PILL_WIDTH
+            new_height = PILL_HEIGHT
+
+            if new_width != self._width or new_height != self._height:
+                self.prepareGeometryChange()
+                self._width = new_width
+                self._height = new_height
+                self.setTransformOriginPoint(self._width / 2, self._height / 2)
+
+            painter.setRenderHint(QPainter.Antialiasing)
+
+            rect = QRectF(0, 0, self._width, self._height)
+            painter.fillRect(rect, QColor("#232323"))
+
+            painter.setPen(QPen(QColor("white")))
+            painter.drawText(rect, Qt.AlignCenter, "No initiative rolled")
+
+            if not is_tv_view and not self.visible_to_players:
+                painter.fillRect(rect, QColor(0, 0, 0, 120))
+
+            return
+
+        metrics = QFontMetrics(font)
+        heroes_by_name = {hero.name: hero for hero in HeroManager.load_heroes()}
+
+        badge_size = 16
+        badge_reserve = badge_size + 12
+
+        pills = []
+
+        for entry in order:
+
+            label = entry["name"] if entry["kind"] == "hero" else entry["label"]
+            text = f"{label} ({entry['roll']})"
+
+            hero = heroes_by_name.get(entry["name"]) if entry["kind"] == "hero" else None
+            has_badge = bool(hero and hero.conditions)
+
+            # boundingRect (actual rendered glyph extent) rather than
+            # horizontalAdvance - the advance metric can under-report the
+            # visual width for bold text on some fonts, clipping the edges.
+            text_width = metrics.boundingRect(text).width()
+            pill_width = max(PILL_MIN_WIDTH, text_width + PILL_H_PADDING)
+
+            if has_badge:
+                pill_width += badge_reserve
+
+            pills.append((entry, text, pill_width, has_badge))
+
+        new_width = sum(p[2] for p in pills) + (len(pills) - 1) * PILL_SPACING
+        new_height = max(PILL_MIN_HEIGHT, metrics.height() + PILL_V_PADDING)
 
         if new_width != self._width or new_height != self._height:
             self.prepareGeometryChange()
@@ -502,44 +602,31 @@ class InitiativeTrackerItem(ResizableRotatableItem):
         rect = QRectF(0, 0, self._width, self._height)
         painter.fillRect(rect, QColor("#232323"))
 
-        if not order:
-            painter.setPen(QPen(QColor("white")))
-            painter.drawText(rect, Qt.AlignCenter, "No initiative rolled")
-
-            if not is_tv_view and not self.visible_to_players:
-                painter.fillRect(rect, QColor(0, 0, 0, 120))
-
-            return
-
-        font = QFont()
-        font.setBold(True)
-        painter.setFont(font)
-
-        heroes_by_name = {hero.name: hero for hero in HeroManager.load_heroes()}
-
         x = 0.0
 
-        for entry in order:
+        for entry, text, pill_width, has_badge in pills:
 
             is_current = entry is current
-            label = entry["name"] if entry["kind"] == "hero" else entry["label"]
-            roll = entry["roll"]
 
-            pill_rect = QRectF(x, 0, PILL_WIDTH, PILL_HEIGHT)
+            pill_rect = QRectF(x, 0, pill_width, self._height)
 
             border_color = QColor("#d4af37") if is_current else QColor("#555")
             painter.setPen(QPen(border_color, 2))
             painter.setBrush(QColor("#2b2b2b"))
             painter.drawRoundedRect(pill_rect, 8, 8)
 
+            # Text is centered in the space left of the badge reserve (if any)
+            # so the badge never has to sit on top of the roll number.
+            text_rect = QRectF(pill_rect)
+            if has_badge:
+                text_rect.setRight(text_rect.right() - badge_reserve)
+
+            painter.setFont(font)
             painter.setPen(QPen(QColor("white")))
-            painter.drawText(pill_rect, Qt.AlignCenter, f"{label}\n({roll})")
+            painter.drawText(text_rect, Qt.AlignCenter, text)
 
-            hero = heroes_by_name.get(entry["name"]) if entry["kind"] == "hero" else None
+            if has_badge:
 
-            if hero and hero.conditions:
-
-                badge_size = 16
                 badge_rect = QRectF(
                     pill_rect.right() - badge_size - 4,
                     pill_rect.top() + 4,
@@ -561,7 +648,16 @@ class InitiativeTrackerItem(ResizableRotatableItem):
 
                 painter.restore()
 
-            x += PILL_WIDTH + PILL_SPACING
+            x += pill_width + PILL_SPACING
 
         if not is_tv_view and not self.visible_to_players:
             painter.fillRect(rect, QColor(0, 0, 0, 120))
+
+
+class InitiativeTrackerItem(BaseInitiativeTrackerItem):
+    max_entries = None
+
+
+class MiniInitiativeTrackerItem(BaseInitiativeTrackerItem):
+    # Current turn plus the next 2 - a compact strip for a corner of the TV.
+    max_entries = 3

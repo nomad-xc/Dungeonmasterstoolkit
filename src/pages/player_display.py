@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QCheckBox,
+    QSpinBox,
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
@@ -37,6 +38,7 @@ from src.widgets.canvas_items import (
     MapBackgroundItem,
     FogOverlayItem,
     InitiativeTrackerItem,
+    MiniInitiativeTrackerItem,
     SCENE_WIDTH,
     SCENE_HEIGHT,
 )
@@ -147,6 +149,44 @@ class InitiativePickerCard(QFrame):
         layout.addWidget(title)
 
         subtitle = QLabel("Live turn order tracker")
+        subtitle.setStyleSheet("color:#999;")
+        layout.addWidget(subtitle)
+
+    def mousePressEvent(self, event):
+        self.add_callback()
+
+
+class MiniInitiativePickerCard(QFrame):
+
+    def __init__(self, add_callback):
+        super().__init__()
+
+        self.add_callback = add_callback
+
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setStyleSheet("""
+        QFrame{
+            background:#2b2b2b;
+            border:2px solid #555;
+            border-radius:12px;
+        }
+
+        QLabel{
+            color:white;
+        }
+
+        QFrame:hover{
+            border:2px solid #d4af37;
+        }
+        """)
+
+        layout = QVBoxLayout(self)
+
+        title = QLabel("Mini Tracker")
+        title.setStyleSheet("font-weight:bold; font-size:16px;")
+        layout.addWidget(title)
+
+        subtitle = QLabel("Current turn + next 2")
         subtitle.setStyleSheet("color:#999;")
         layout.addWidget(subtitle)
 
@@ -645,6 +685,28 @@ class PlayerDisplayPage(QWidget):
         self.lock_checkbox.toggled.connect(self.toggle_lock)
         self.selection_toolbar.addWidget(self.lock_checkbox)
 
+        self.aspect_lock_checkbox = QCheckBox("Lock Ratio")
+        self.aspect_lock_checkbox.setToolTip(
+            "Snaps the map to the ratio on the right and keeps it locked "
+            "while resizing, so it always lines up cleanly with a square grid."
+        )
+        self.aspect_lock_checkbox.toggled.connect(self.toggle_aspect_lock)
+        self.selection_toolbar.addWidget(self.aspect_lock_checkbox)
+
+        self.ratio_x_spinbox = QSpinBox()
+        self.ratio_x_spinbox.setRange(1, 100)
+        self.ratio_x_spinbox.setValue(4)
+        self.ratio_x_spinbox.valueChanged.connect(self.ratio_value_changed)
+        self.selection_toolbar.addWidget(self.ratio_x_spinbox)
+
+        self.selection_toolbar.addWidget(QLabel(":"))
+
+        self.ratio_y_spinbox = QSpinBox()
+        self.ratio_y_spinbox.setRange(1, 100)
+        self.ratio_y_spinbox.setValue(3)
+        self.ratio_y_spinbox.valueChanged.connect(self.ratio_value_changed)
+        self.selection_toolbar.addWidget(self.ratio_y_spinbox)
+
         self.remove_button = QPushButton("Remove")
         self.remove_button.clicked.connect(self.remove_selected)
         self.selection_toolbar.addWidget(self.remove_button)
@@ -655,6 +717,9 @@ class PlayerDisplayPage(QWidget):
         self.selection_toolbar_widget.setLayout(self.selection_toolbar)
         self.visible_checkbox.setEnabled(False)
         self.lock_checkbox.setEnabled(False)
+        self.aspect_lock_checkbox.setEnabled(False)
+        self.ratio_x_spinbox.setEnabled(False)
+        self.ratio_y_spinbox.setEnabled(False)
         self.remove_button.setEnabled(False)
         canvas_col.addWidget(self.selection_toolbar_widget)
 
@@ -695,6 +760,9 @@ class PlayerDisplayPage(QWidget):
         self.selected_item = None
         self.visible_checkbox.setEnabled(False)
         self.lock_checkbox.setEnabled(False)
+        self.aspect_lock_checkbox.setEnabled(False)
+        self.ratio_x_spinbox.setEnabled(False)
+        self.ratio_y_spinbox.setEnabled(False)
         self.remove_button.setEnabled(False)
 
         self.view.fog_item = None
@@ -713,6 +781,8 @@ class PlayerDisplayPage(QWidget):
                 self.add_hero_item(widget_dict)
             elif widget_dict.get("type") == "initiative":
                 self.add_initiative_tracker_item(widget_dict)
+            elif widget_dict.get("type") == "mini_initiative":
+                self.add_mini_initiative_tracker_item(widget_dict)
 
         self.refresh_maps_list()
         self.refresh_widgets_list()
@@ -762,6 +832,10 @@ class PlayerDisplayPage(QWidget):
 
         self.widgets_container.addWidget(
             InitiativePickerCard(self.add_initiative_tracker)
+        )
+
+        self.widgets_container.addWidget(
+            MiniInitiativePickerCard(self.add_mini_initiative_tracker)
         )
 
         for hero in HeroManager.load_heroes():
@@ -882,6 +956,10 @@ class PlayerDisplayPage(QWidget):
                 self.display.background_rotation,
             )
             item.set_locked(self.display.background_locked)
+            item.locked_aspect_ratio = (
+                self.display.background_ratio_x / self.display.background_ratio_y
+                if self.display.background_aspect_locked else None
+            )
             item.geometryChanged.connect(lambda: self.save_background_geometry(item))
 
             self.scene.addItem(item)
@@ -1237,6 +1315,40 @@ class PlayerDisplayPage(QWidget):
 
         self.scene.addItem(item)
 
+    def add_mini_initiative_tracker(self):
+
+        widget_dict = {
+            "widget_id": self.next_widget_id(),
+            "type": "mini_initiative",
+            "x": 100,
+            "y": 100,
+            "width": 100,
+            "height": 60,
+            "rotation": 0,
+            "visible": True,
+            "locked": False,
+        }
+
+        self.display.widgets.append(widget_dict)
+        PlayerDisplayManager.save_display(self.display)
+
+        self.add_mini_initiative_tracker_item(widget_dict)
+
+    def add_mini_initiative_tracker_item(self, widget_dict):
+
+        item = MiniInitiativeTrackerItem(
+            widget_dict["widget_id"],
+            widget_dict["x"],
+            widget_dict["y"],
+            widget_dict["rotation"],
+            widget_dict.get("visible", True),
+        )
+        item.set_locked(widget_dict.get("locked", False))
+
+        item.geometryChanged.connect(lambda: self.save_item_geometry(item))
+
+        self.scene.addItem(item)
+
     def save_item_geometry(self, item):
 
         for w in self.display.widgets:
@@ -1264,7 +1376,7 @@ class PlayerDisplayPage(QWidget):
         selected = self.scene.selectedItems()
         item = selected[0] if selected else None
 
-        if isinstance(item, (TokenItem, HeroRingItem, MapBackgroundItem, InitiativeTrackerItem)):
+        if isinstance(item, (TokenItem, HeroRingItem, MapBackgroundItem, InitiativeTrackerItem, MiniInitiativeTrackerItem)):
 
             self.selected_item = item
 
@@ -1282,12 +1394,31 @@ class PlayerDisplayPage(QWidget):
             self.lock_checkbox.blockSignals(False)
             self.lock_checkbox.setEnabled(True)
 
+            is_background = isinstance(item, MapBackgroundItem)
+
+            self.aspect_lock_checkbox.blockSignals(True)
+            self.aspect_lock_checkbox.setChecked(bool(item.locked_aspect_ratio) if is_background else False)
+            self.aspect_lock_checkbox.blockSignals(False)
+            self.aspect_lock_checkbox.setEnabled(is_background)
+
+            self.ratio_x_spinbox.blockSignals(True)
+            self.ratio_y_spinbox.blockSignals(True)
+            self.ratio_x_spinbox.setValue(int(self.display.background_ratio_x) if is_background else 4)
+            self.ratio_y_spinbox.setValue(int(self.display.background_ratio_y) if is_background else 3)
+            self.ratio_x_spinbox.blockSignals(False)
+            self.ratio_y_spinbox.blockSignals(False)
+            self.ratio_x_spinbox.setEnabled(is_background)
+            self.ratio_y_spinbox.setEnabled(is_background)
+
             self.remove_button.setEnabled(True)
 
         else:
             self.selected_item = None
             self.visible_checkbox.setEnabled(False)
             self.lock_checkbox.setEnabled(False)
+            self.aspect_lock_checkbox.setEnabled(False)
+            self.ratio_x_spinbox.setEnabled(False)
+            self.ratio_y_spinbox.setEnabled(False)
             self.remove_button.setEnabled(False)
 
     def toggle_visibility(self, checked):
@@ -1315,6 +1446,34 @@ class PlayerDisplayPage(QWidget):
             PlayerDisplayManager.save_display(self.display)
         else:
             self.update_widget_field(self.selected_item.widget_id, locked=checked)
+
+    def toggle_aspect_lock(self, checked):
+
+        if not isinstance(self.selected_item, MapBackgroundItem):
+            return
+
+        self.display.background_aspect_locked = checked
+
+        if checked:
+            ratio = self.ratio_x_spinbox.value() / self.ratio_y_spinbox.value()
+            self.selected_item.snap_to_aspect_ratio(ratio)
+        else:
+            self.selected_item.locked_aspect_ratio = None
+
+        self.save_background_geometry(self.selected_item)
+
+    def ratio_value_changed(self):
+
+        self.display.background_ratio_x = self.ratio_x_spinbox.value()
+        self.display.background_ratio_y = self.ratio_y_spinbox.value()
+
+        if isinstance(self.selected_item, MapBackgroundItem) and self.aspect_lock_checkbox.isChecked():
+
+            ratio = self.ratio_x_spinbox.value() / self.ratio_y_spinbox.value()
+            self.selected_item.snap_to_aspect_ratio(ratio)
+            self.save_background_geometry(self.selected_item)
+        else:
+            PlayerDisplayManager.save_display(self.display)
 
     def remove_selected(self):
 
@@ -1356,6 +1515,9 @@ class PlayerDisplayPage(QWidget):
         self.selected_item = None
         self.visible_checkbox.setEnabled(False)
         self.lock_checkbox.setEnabled(False)
+        self.aspect_lock_checkbox.setEnabled(False)
+        self.ratio_x_spinbox.setEnabled(False)
+        self.ratio_y_spinbox.setEnabled(False)
         self.remove_button.setEnabled(False)
 
     #

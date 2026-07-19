@@ -341,7 +341,7 @@ class SoundCard(QFrame):
         self.refresh_callback = refresh_callback
 
         self.setFrameShape(QFrame.StyledPanel)
-        self.setMinimumHeight(120)
+        self.setFixedWidth(160)
 
         self.setStyleSheet("""
         QFrame{
@@ -363,6 +363,7 @@ class SoundCard(QFrame):
 
         title = QLabel(sound.name)
         title.setStyleSheet("font-weight:bold;")
+        title.setWordWrap(True)
         layout.addWidget(title)
 
         layout.addStretch()
@@ -374,6 +375,10 @@ class SoundCard(QFrame):
         delete_button = QPushButton("Delete")
         delete_button.clicked.connect(self.delete_sound)
         layout.addWidget(delete_button)
+
+        # Computed from the live layout rather than a hardcoded guess, so it
+        # stays correct for whatever fonts are actually installed.
+        self.setMinimumHeight(max(120, self.sizeHint().height()))
 
     def play(self):
         play_sound(self.sound.path)
@@ -840,14 +845,20 @@ class LibraryPage(QWidget):
 
         for index, sound in enumerate(sounds):
 
-            row = index // 4
-            col = index % 4
+            row = index // 6
+            col = index % 6
 
             grid.addWidget(
                 SoundCard(sound, self.refresh),
                 row,
-                col
+                col,
+                Qt.AlignLeft | Qt.AlignTop
             )
+
+        for col in range(6):
+            grid.setColumnStretch(col, 0)
+
+        grid.setColumnStretch(6, 1)
 
         container.addLayout(grid)
         container.addStretch()
